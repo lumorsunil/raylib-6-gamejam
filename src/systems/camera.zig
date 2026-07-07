@@ -14,6 +14,8 @@ pub const Camera = struct {
         const camera = game.camera();
         const pixel_size = game.worldSize();
 
+        camera.zoom = game.zoom();
+
         while (it.next()) |ctx| {
             const body = ctx.getConst(Game.C.Body);
 

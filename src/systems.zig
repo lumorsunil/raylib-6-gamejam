@@ -1,5 +1,7 @@
+pub const Background = @import("systems/background.zig").Background;
 pub const Camera = @import("systems/camera.zig").Camera;
 pub const Controllable = @import("systems/controllable.zig").Controllable;
+pub const DamageOnTouch = @import("systems/damage-on-touch.zig").DamageOnTouch;
 pub const DestroyEntities = @import("systems/destroy-entities.zig").DestroyEntities;
 pub const Enemy = @import("systems/enemy.zig").Enemy;
 pub const Input = @import("systems/input.zig").Input;

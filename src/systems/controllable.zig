@@ -14,6 +14,9 @@ pub const Controllable = struct {
         while (it.next()) |ctx| {
             const body = ctx.get(Game.C.Body);
             const controllable = ctx.get(Game.C.Controllable);
+            const player = ctx.getConst(Game.C.Player);
+
+            if (player.destroyed_at != null) return;
 
             body.velocity.x = input.left_x_axis * controllable.speed;
             body.velocity.y = input.left_y_axis * controllable.speed;

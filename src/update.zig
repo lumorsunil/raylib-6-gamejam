@@ -59,6 +59,9 @@ fn updateMenu(self: *Game) void {
 }
 
 fn updateGameplay(self: *Game) void {
+    const background = self.getSingleton(Game.S.Background);
+    background.update(self);
+
     const input = self.input();
     if (input.isPressed(.start)) {
         self.menu.handleEvent(self, .{ .set_menu = .pause });
@@ -68,6 +71,9 @@ fn updateGameplay(self: *Game) void {
 
     self.controllable().update(self);
     self.physics().update(self);
+
+    const dot = self.getSingleton(Game.S.DamageOnTouch);
+    dot.update(self);
 
     const player = self.getSingleton(Game.S.Player);
     player.update(self);

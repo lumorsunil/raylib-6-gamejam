@@ -10,6 +10,16 @@ pub const DestroyEntities = struct {
     }
 
     pub fn update(self: *DestroyEntities, game: *Game) void {
+        var it = game.entityIterator(.{Game.C.DestroyAt}, .{});
+
+        while (it.next()) |ctx| {
+            const destroy_at = ctx.getConst(Game.C.DestroyAt);
+
+            if (destroy_at.destroy_at <= game.elapsedTime()) {
+                ctx.destroy();
+            }
+        }
+
         for (0..self.n_entities_to_destroy) |i| {
             const entity = self.entities_to_destroy[i];
             if (!game.reg.valid(entity)) continue;

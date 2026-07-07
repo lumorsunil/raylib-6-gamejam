@@ -1,38 +1,65 @@
 const std = @import("std");
 const Game = @import("../game.zig").Game;
 
-const EnemyDef = enum {
-    tier_one,
-    tier_two,
-    tier_three,
-    tier_four,
+const EnemyDef = struct {
+    tier: usize,
+    weapon: ?Game.C.EnemyWeapon.WeaponType = null,
 
-    pub const n_tiers = std.meta.tags(@This()).len;
+    pub const n_tiers = 4;
+
+    pub fn init(tier: usize, weapon: ?Game.C.EnemyWeapon.WeaponType) @This() {
+        return .{
+            .tier = tier,
+            .weapon = weapon,
+        };
+    }
+
+    pub fn noWeapon(tier: usize) @This() {
+        return .init(tier, null);
+    }
+
+    pub fn merge(prev_tier: usize) @This() {
+        const tier = prev_tier + 1;
+        return .init(tier, mergeWeapon(tier));
+    }
 
     pub fn tint(self: @This()) Game.Color {
-        return switch (self) {
-            .tier_one => .green,
-            .tier_two => .blue,
-            .tier_three => .red,
-            .tier_four => .yellow,
+        return switch (self.tier) {
+            0 => .green,
+            1 => .blue,
+            2 => .red,
+            3 => .yellow,
+            else => .white,
         };
     }
 
     pub fn health(self: @This()) usize {
-        return switch (self) {
-            .tier_one => 2,
-            .tier_two => 5,
-            .tier_three => 10,
-            .tier_four => 20,
+        return switch (self.tier) {
+            0 => 2,
+            1 => 5,
+            2 => 10,
+            3 => 20,
+            else => 1,
         };
     }
 
     pub fn velocity(self: @This()) Game.Vector {
-        return switch (self) {
-            .tier_one => .init(0, 200),
-            .tier_two => .init(0, 100),
-            .tier_three => .init(0, 80),
-            .tier_four => .init(0, 50),
+        return switch (self.tier) {
+            0 => .init(0, 100),
+            1 => .init(0, 50),
+            2 => .init(0, 25),
+            3 => .init(0, 15),
+            else => .init(0, 0),
+        };
+    }
+
+    pub fn mergeWeapon(tier: usize) ?Game.C.EnemyWeapon.WeaponType {
+        return switch (tier) {
+            0 => null,
+            1 => .double_cannon,
+            2 => null,
+            3 => null,
+            else => null,
         };
     }
 };
@@ -58,12 +85,12 @@ const SpawnDef = union(enum) {
 
         pub const GroupEnemy = struct {
             position: Game.Vector,
-            velocity: Game.Vector,
+            velocity: ?Game.Vector,
             def: EnemyDef,
 
             pub fn init(
                 position: Game.Vector,
-                velocity: Game.Vector,
+                velocity: ?Game.Vector,
                 def: EnemyDef,
             ) @This() {
                 return .{
@@ -156,17 +183,22 @@ const Stage = struct {
     }
 };
 
-const at_the_back = -60;
+// const at_the_back = -60;
+const at_the_back = -0.1;
 
 const stages = [_]Stage{
     .init(&.{
-        // .init(.init(0, 0), &.{}, 0),
-        // .init(.init(200, at_the_back), &.{ .one(.tier_one), .one(.tier_one), .one(.tier_one) }, 2),
-        // .init(.init(100, at_the_back), &.{ .one(.tier_one), .one(.tier_one), .one(.tier_one) }, 2),
-        // .init(.init(300, at_the_back), &.{ .one(.tier_one), .one(.tier_one), .one(.tier_two) }, 2),
+        .init(.init(0, 0), &.{}, 0),
+        .init(.init(0.5, at_the_back), &.{ .one(.noWeapon(0)), .one(.noWeapon(0)), .one(.noWeapon(0)) }, 2),
+        .init(.init(0.3, at_the_back), &.{ .one(.init(0, .single_cannon)), .one(.noWeapon(0)), .one(.noWeapon(0)) }, 2),
+        .init(.init(0.7, at_the_back), &.{ .one(.noWeapon(0)), .one(.noWeapon(0)), .one(.init(1, .double_cannon)) }, 2),
         .init(.init(100, at_the_back), &.{.many(&.{
-            .init(.init(-100, at_the_back), .init(50, 50), .tier_one),
-            .init(.init(505, at_the_back), .init(-50, 50), .tier_one),
+            .init(.init(-0.1, at_the_back), .init(50, 50), .init(0, .single_cannon)),
+            .init(.init(1.1, at_the_back), .init(-50, 50), .init(0, .single_cannon)),
+        })}, 2),
+        .init(.init(100, at_the_back), &.{.many(&.{
+            .init(.init(0.3, at_the_back), null, .init(1, .double_cannon)),
+            .init(.init(0.7, at_the_back), null, .init(1, .double_cannon)),
         })}, 2),
         .init(.init(0, 0), &.{}, 0),
         .init(.init(0, 0), &.{}, 0),
@@ -190,6 +222,7 @@ pub const Enemy = struct {
         self.updateStage(game);
         self.updateHits(game);
         self.updateMerges(game);
+        self.updateWeapons(game);
     }
 
     fn updateStage(self: *Enemy, game: *Game) void {
@@ -241,7 +274,7 @@ pub const Enemy = struct {
         const ctx = game.createEntity();
         var position = if (position_override) |p| p else brk: {
             var p = self.current_wave.def.position;
-            const wonky_offset = 32;
+            const wonky_offset = 0.2;
             if (self.current_wave.n_spawns_spawned % 2 == 0) {
                 p.x += wonky_offset;
             } else {
@@ -249,14 +282,19 @@ pub const Enemy = struct {
             }
             break :brk p;
         };
-        position = position.add(game.worldPosition());
+        position = position.multiply(game.worldSize()).add(game.worldPosition());
         ctx.add(Game.C.Body.init(position));
         const body = ctx.get(Game.C.Body);
         body.velocity = if (velocity_override) |v| v else enemy_def.velocity();
-        ctx.add(game.initSprite(.init(0, 0, 63, 27)));
+        ctx.add(game.initSprite(.init(127, 5, 31, 17)));
         const renderable = ctx.get(Game.C.Renderable);
         renderable.sprite.tint = enemy_def.tint();
-        ctx.add(Game.C.Enemy.init(@intFromEnum(enemy_def), enemy_def.health()));
+        renderable.sprite.draw_layer = Game.draw_layers.enemy;
+        ctx.add(Game.C.Enemy.init(enemy_def.tier, enemy_def.health()));
+        if (enemy_def.weapon) |weapon_type| {
+            ctx.add(Game.C.EnemyWeapon.init(weapon_type));
+        }
+        ctx.add(Game.C.DamageOnTouch{ .destroy_source = false });
     }
 
     fn spawnGroup(self: *Enemy, game: *Game, group: SpawnDef.Group) void {
@@ -276,20 +314,96 @@ pub const Enemy = struct {
                 const proj_hitbox = game.hitbox(proj_ctx);
 
                 if (hitbox.checkCollision(proj_hitbox)) {
-                    hitEnemy(ctx, proj_ctx, game.elapsedTime());
+                    hitEnemy(game, ctx, proj_ctx, game.elapsedTime());
                 }
             }
         }
     }
 
-    fn hitEnemy(enemy: Game.EntityContext, projectile: Game.EntityContext, t: f64) void {
+    fn hitEnemy(
+        game: *Game,
+        enemy: Game.EntityContext,
+        projectile: Game.EntityContext,
+        t: f64,
+    ) void {
         projectile.destroy();
         const enemy_component = enemy.get(Game.C.Enemy);
         enemy_component.health -|= 1;
         if (enemy_component.health == 0) {
+            spawnExplosion(game, enemy.getConst(Game.C.Body).position);
             return enemy.destroy();
         }
         enemy_component.hit_fade_ends_at = t + Game.C.Enemy.hit_fade_duration;
+    }
+
+    fn spawnExplosion(game: *Game, position: Game.Vector) void {
+        const fade_duration = 0.3;
+        const center_scale_per_second = 2;
+        const shard_speed = 150;
+        const shard_duration = 0.3;
+
+        const center_ctx = game.createEntity();
+        center_ctx.add(Game.C.Body.init(position));
+        center_ctx.add(game.initSprite(.init(158, 6, 31, 17)));
+        center_ctx.add(Game.C.ScaleGradient.init(center_scale_per_second));
+        center_ctx.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
+
+        var cursor = Game.Vector.init(193, 7);
+        const shard_size = Game.Vector.init(5, 6);
+
+        const shard_0 = game.createEntity();
+        shard_0.add(Game.C.Body.init(position));
+        var shard_body = shard_0.get(Game.C.Body);
+        shard_body.velocity = Game.Vector.init(shard_speed, 0).rotate(std.math.pi / 2.0 + std.math.pi / 4.0).multiply(.init(1, -1));
+        shard_0.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
+        cursor.x += 5;
+        shard_0.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
+        shard_0.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
+
+        const shard_1 = game.createEntity();
+        shard_1.add(Game.C.Body.init(position));
+        shard_body = shard_1.get(Game.C.Body);
+        shard_body.velocity = Game.Vector.init(0, -shard_speed);
+        shard_1.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
+        cursor.x += 5;
+        shard_1.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
+        shard_1.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
+
+        const shard_2 = game.createEntity();
+        shard_2.add(Game.C.Body.init(position));
+        shard_body = shard_2.get(Game.C.Body);
+        shard_body.velocity = Game.Vector.init(shard_speed, 0).rotate(std.math.pi / 4.0).multiply(.init(1, -1));
+        shard_2.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
+        cursor.x = 193;
+        cursor.y += 7;
+        shard_2.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
+        shard_2.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
+
+        const shard_3 = game.createEntity();
+        shard_3.add(Game.C.Body.init(position));
+        shard_body = shard_3.get(Game.C.Body);
+        shard_body.velocity = Game.Vector.init(shard_speed, 0).rotate(std.math.pi + std.math.pi / 4.0).multiply(.init(1, -1));
+        shard_3.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
+        cursor.x += 5;
+        shard_3.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
+        shard_3.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
+
+        const shard_4 = game.createEntity();
+        shard_4.add(Game.C.Body.init(position));
+        shard_body = shard_4.get(Game.C.Body);
+        shard_body.velocity = Game.Vector.init(shard_speed, 0).rotate(std.math.pi + 2.0 * std.math.pi / 4.0).multiply(.init(1, -1));
+        shard_4.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
+        cursor.x += 5;
+        shard_4.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
+        shard_4.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
+
+        const shard_5 = game.createEntity();
+        shard_5.add(Game.C.Body.init(position));
+        shard_body = shard_5.get(Game.C.Body);
+        shard_body.velocity = Game.Vector.init(shard_speed, 0).rotate(std.math.pi + 3.0 * std.math.pi / 4.0).multiply(.init(1, -1));
+        shard_5.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
+        shard_5.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
+        shard_5.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
     }
 
     fn updateMerges(self: *Enemy, game: *Game) void {
@@ -333,12 +447,66 @@ pub const Enemy = struct {
         const body_b = b.getConst(Game.C.Body);
 
         const world_pos = a.game.worldPosition();
-        const position = body_a.position.lerp(body_b.position, 0.5).subtract(world_pos);
-        const enemy_def: EnemyDef = @enumFromInt(enemy_a.tier + 1);
+        const world_size = a.game.worldSize();
+        const position = body_a.position.lerp(body_b.position, 0.5).subtract(world_pos).divide(world_size);
+        const enemy_def: EnemyDef = .merge(enemy_a.tier);
 
         a.destroy();
         b.destroy();
 
         self.spawnByEnemyDef(a.game, enemy_def, position, null);
+    }
+
+    fn updateWeapons(_: *Enemy, game: *Game) void {
+        var it = game.entityIterator(.{ Game.C.Enemy, Game.C.EnemyWeapon }, .{});
+
+        while (it.next()) |ctx| {
+            const weapon = ctx.get(Game.C.EnemyWeapon);
+
+            if (weapon.next_shot_at < game.elapsedTime()) {
+                shootWeapon(game, ctx, weapon);
+            }
+        }
+    }
+
+    fn shootWeapon(game: *Game, ctx: Game.EntityContext, weapon: *Game.C.EnemyWeapon) void {
+        weapon.next_shot_at = game.elapsedTime() + weapon.cooldown();
+
+        const enemy = ctx.getConst(Game.C.Enemy);
+        const offset = weapon.offset();
+        const body = ctx.getConst(Game.C.Body);
+        const position = offset.add(body.position);
+        var velocity = body.velocity;
+        velocity.x = 0;
+        velocity.y = 50 + body.velocity.y;
+        const enemy_def = EnemyDef.init(enemy.tier, weapon.weapon_type);
+
+        switch (weapon.weapon_type) {
+            .single_cannon => spawnProjectile(game, enemy_def, position, velocity),
+            .double_cannon => {
+                var p = position;
+                const space_between = 20;
+                p.x -= space_between / 2;
+                spawnProjectile(game, enemy_def, p, velocity);
+                p.x += space_between;
+                spawnProjectile(game, enemy_def, p, velocity);
+            },
+        }
+    }
+
+    fn spawnProjectile(
+        game: *Game,
+        enemy_def: EnemyDef,
+        position: Game.Vector,
+        velocity: Game.Vector,
+    ) void {
+        const proj_ctx = game.createEntity();
+        proj_ctx.add(Game.C.Body.init(position));
+        const proj_body = proj_ctx.get(Game.C.Body);
+        proj_body.velocity = velocity;
+        proj_ctx.add(game.initSprite(.init(36, 39, 5, 11)));
+        const sprite = proj_ctx.get(Game.C.Renderable);
+        sprite.sprite.tint = enemy_def.tint();
+        proj_ctx.add(Game.C.DamageOnTouch{});
     }
 };

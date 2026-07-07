@@ -82,7 +82,7 @@ pub const Game = struct {
     pub const draw = @import("draw.zig").draw;
 
     pub fn zoom(_: @This()) f32 {
-        return 1;
+        return 2;
     }
 
     pub fn fps(_: @This()) u8 {
@@ -101,8 +101,11 @@ pub const Game = struct {
         return .init(720, 720);
     }
 
-    pub fn worldSize(_: @This()) Vector {
-        return .init(405, 720);
+    pub fn worldSize(self: @This()) Vector {
+        const base_x = 405;
+        const base_y = 720;
+        const z = self.zoom();
+        return .init(base_x / z, base_y / z);
     }
 
     pub fn worldCenter(self: @This()) Vector {
@@ -127,7 +130,7 @@ pub const Game = struct {
     }
 
     pub fn worldPosition(self: @This()) Vector {
-        const screen_size = self.screenSize();
+        const screen_size = self.screenSize().scale(1 / self.zoom());
         const world_size = self.worldSize();
         return .init(screen_size.x / 2 - world_size.x / 2, 0);
     }
@@ -290,8 +293,8 @@ pub const Game = struct {
         const body = ctx.get(Game.C.Body);
         var hitbox_component = ctx.tryGetConst(Game.C.Hitbox) orelse {
             const renderable = ctx.get(Game.C.Renderable);
-            const size = renderable.size(body.rotation);
-            const origin = renderable.origin(body.rotation);
+            const size = renderable.size(1, body.rotation);
+            const origin = renderable.origin(1, body.rotation);
             const position = body.position.subtract(origin);
 
             return .init(position, size);
@@ -334,7 +337,12 @@ pub const Game = struct {
         self.screen_state = .ending;
     }
 
-    pub fn isOutOfBounds(self: *Game, ctx: EntityContext) bool {
+    pub const OutOfBoundsRules = enum {
+        all_directions,
+        allow_bottom,
+    };
+
+    pub fn isOutOfBounds(self: *Game, ctx: EntityContext, rules: OutOfBoundsRules) bool {
         const hitbox_ = self.hitbox(ctx);
         const world_pos = self.worldPosition();
         const world_size = self.worldSize();
@@ -342,8 +350,18 @@ pub const Game = struct {
         if (hitbox_.right() - world_pos.x <= 0) return true;
         if (hitbox_.bottom() - world_pos.y <= 0) return true;
         if (hitbox_.left() - world_pos.x - world_size.x >= 0) return true;
-        if (hitbox_.top() - world_pos.y - world_size.y >= 0) return true;
+        if (rules != .allow_bottom and hitbox_.top() - world_pos.y - world_size.y >= 0) return true;
 
         return false;
     }
+
+    pub const draw_layers: struct {
+        background: usize,
+        enemy: usize,
+        player: usize,
+    } = .{
+        .background = 0,
+        .enemy = 1,
+        .player = 2,
+    };
 };

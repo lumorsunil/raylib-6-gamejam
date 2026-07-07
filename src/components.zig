@@ -1,9 +1,14 @@
 pub const Body = @import("components/body.zig").Body;
 pub const Controllable = @import("components/controllable.zig").Controllable;
+pub const DamageOnTouch = @import("components/damage-on-touch.zig").DamageOnTouch;
+pub const DestroyAt = @import("components/destroy-at.zig").DestroyAt;
 pub const Enemy = @import("components/enemy.zig").Enemy;
+pub const EnemyWeapon = @import("components/enemy-weapon.zig").EnemyWeapon;
+pub const FadeGradient = @import("components/fade-gradient.zig").FadeGradient;
 pub const Hitbox = @import("components/hitbox.zig").Hitbox;
 pub const Invisible = @import("components/invisible.zig").Invisible;
 pub const Player = @import("components/player.zig").Player;
 pub const PlayerProjectile = @import("components/player-projectile.zig").PlayerProjectile;
 pub const RelativePosition = @import("components/relative-position.zig").RelativePosition;
 pub const Renderable = @import("components/renderable.zig").Renderable;
+pub const ScaleGradient = @import("components/scale-gradient.zig").ScaleGradient;

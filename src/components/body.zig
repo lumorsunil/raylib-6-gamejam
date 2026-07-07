@@ -5,6 +5,7 @@ pub const Body = struct {
     position: Game.Vector,
     velocity: Game.Vector = .init(0, 0),
     acceleration: Game.Vector = .init(0, 0),
+    scale: f32 = 1,
     rotation: f32 = 0,
     angular_velocity: f32 = 0,
     lock_x: bool = false,

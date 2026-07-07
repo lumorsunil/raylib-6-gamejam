@@ -7,20 +7,26 @@ pub const Renderable = union(enum) {
     sprite: Sprite,
     polygon: Polygon,
 
-    pub fn draw(self: Renderable, position: Game.Vector, rotation: f32) void {
+    pub fn draw(self: Renderable, position: Game.Vector, scale: f32, rotation: f32) void {
         switch (self) {
-            inline else => |s| s.draw(position, rotation),
+            inline else => |s| s.draw(position, scale, rotation),
         }
     }
 
-    pub fn size(self: Renderable, rotation: f32) Game.Vector {
+    pub fn size(self: Renderable, scale: f32, rotation: f32) Game.Vector {
         return switch (self) {
-            inline else => |s| s.size(rotation),
+            inline else => |s| s.size(rotation).scale(scale),
         };
     }
 
-    pub fn origin(self: Renderable, rotation: f32) Game.Vector {
-        return self.size(rotation).scale(0.5);
+    pub fn layer(self: Renderable) usize {
+        return switch (self) {
+            inline else => |s| s.layer(),
+        };
+    }
+
+    pub fn origin(self: Renderable, scale: f32, rotation: f32) Game.Vector {
+        return self.size(scale, rotation).scale(0.5);
     }
 
     pub fn initRectangle(rec_size: Game.Vector, color: Game.Color) @This() {
@@ -39,7 +45,7 @@ pub const Renderable = union(enum) {
         rec_size: Game.Vector,
         color: Game.Color,
 
-        pub fn draw(self: Rectangle, position: Game.Vector, rotation: f32) void {
+        pub fn draw(self: Rectangle, position: Game.Vector, _: f32, rotation: f32) void {
             rl.drawRectanglePro(.init(
                 position.x,
                 position.y,
@@ -51,23 +57,34 @@ pub const Renderable = union(enum) {
         pub fn size(self: Rectangle, _: f32) Game.Vector {
             return self.rec_size;
         }
+
+        pub fn layer(_: Rectangle) usize {
+            return 0;
+        }
     };
 
     pub const Sprite = struct {
         texture: rl.Texture2D,
         source: rl.Rectangle,
         tint: rl.Color = .white,
+        draw_layer: usize = 1,
 
-        pub fn draw(self: Sprite, position: Game.Vector, rotation: f32) void {
+        pub fn draw(self: Sprite, position: Game.Vector, scale: f32, rotation: f32) void {
             var dest = self.source;
             dest.x = position.x;
             dest.y = position.y;
-            const origin_ = origin(.{ .sprite = self }, rotation);
+            dest.width *= scale;
+            dest.height *= scale;
+            const origin_ = origin(.{ .sprite = self }, scale, rotation);
             rl.drawTexturePro(self.texture, self.source, dest, origin_, rotation, self.tint);
         }
 
         pub fn size(self: Sprite, _: f32) Game.Vector {
             return .init(self.source.width, self.source.height);
+        }
+
+        pub fn layer(self: Sprite) usize {
+            return self.draw_layer;
         }
     };
 
@@ -77,7 +94,7 @@ pub const Renderable = union(enum) {
         scale: f32 = 1,
         color: Game.Color = .white,
 
-        pub fn draw(self: Polygon, position: Game.Vector, rotation: f32) void {
+        pub fn draw(self: Polygon, position: Game.Vector, _: f32, rotation: f32) void {
             for (0..self.points.len) |i| {
                 const start = self.points[i].scale(self.scale).rotate(rotation).add(position);
                 const end = self.points[(i + 1) % self.points.len].scale(self.scale).rotate(rotation).add(position);
@@ -102,6 +119,10 @@ pub const Renderable = union(enum) {
             const min_max = Game.Vector.init(max_x - min_x, max_y - min_y);
 
             return min_max.scale(self.scale);
+        }
+
+        pub fn layer(_: Polygon) usize {
+            return 0;
         }
     };
 };

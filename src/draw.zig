@@ -22,12 +22,14 @@ fn drawLogo(self: *Game) void {
     rl.drawTexture(self.logo.texture, 0, half_screen_y - half_height, tint);
 }
 
+fn drawFadeOverlay(self: *Game) void {
+    const screen_size = self.screenSize();
+    rl.drawRectangleV(.init(0, 0), screen_size, .alpha(.black, 0.8));
+}
+
 fn drawMenu(self: *Game) void {
     drawGameplay(self);
-
-    const world_pos = self.worldPosition();
-    const world_size = self.worldSize();
-    rl.drawRectangleV(world_pos, world_size, .alpha(.black, 0.8));
+    drawFadeOverlay(self);
 
     var ui_camera = self.camera().*;
     ui_camera.offset = .zero();
@@ -66,7 +68,7 @@ fn drawVolume(self: *Game, position: Game.Vector) void {
 }
 
 fn drawGameplay(self: *Game) void {
-    rl.clearBackground(.dark_gray);
+    rl.clearBackground(.black);
     self.camera().begin();
     drawGrid(self);
     drawRenderables(self);
@@ -94,10 +96,7 @@ fn drawEnding(self: *Game) void {
 
 fn drawGameOver(self: *Game) void {
     drawGameplay(self);
-
-    const world_pos = self.worldPosition();
-    const world_size = self.worldSize();
-    rl.drawRectangleV(world_pos, world_size, .alpha(.black, 0.8));
+    drawFadeOverlay(self);
 
     var ui_camera = self.camera().*;
     ui_camera.offset = .zero();
@@ -171,27 +170,85 @@ fn drawTextCentered(
     drawText(fmt, args, font_size, p, color);
 }
 
+fn lessThan(_: usize, a: usize, b: usize) bool {
+    return a < b;
+}
+
 fn drawRenderables(self: *Game) void {
     var it = self.entityIterator(.{ Game.C.Renderable, Game.C.Body }, .{Game.C.Invisible});
 
-    while (it.next()) |ctx| {
-        const body = ctx.getConst(Game.C.Body);
-        const renderable = ctx.getConst(Game.C.Renderable);
-
-        renderable.draw(body.position, body.rotation);
-
-        if (ctx.tryGetConst(Game.C.Enemy)) |enemy| {
-            const t = self.elapsedTime();
-            if (enemy.hit_fade_ends_at <= t) continue;
-
-            const d = enemy.hit_fade_ends_at - t;
-            const ratio: f32 = @floatCast(d / Game.C.Enemy.hit_fade_duration);
-
-            var renderable_fade = renderable;
-            renderable_fade.sprite.tint = .alpha(.white, ratio);
-            renderable_fade.sprite.source = .init(63, 0, 63, 27);
-            renderable_fade.draw(body.position, body.rotation);
+    var layer_map: std.array_hash_map.Auto(usize, std.ArrayList(Game.EntityContext)) = .empty;
+    defer {
+        for (layer_map.values()) |*list| {
+            list.deinit(self.allocator);
         }
+        layer_map.deinit(self.allocator);
+    }
+
+    while (it.next()) |ctx| {
+        const renderable = ctx.getConst(Game.C.Renderable);
+        const layer = renderable.layer();
+
+        const entry = layer_map.getOrPut(self.allocator, layer) catch unreachable;
+        if (!entry.found_existing) {
+            entry.value_ptr.* = .empty;
+        }
+
+        entry.value_ptr.append(self.allocator, ctx) catch unreachable;
+    }
+    std.mem.sort(usize, layer_map.keys(), @as(usize, 0), lessThan);
+    layer_map.reIndex(self.allocator) catch unreachable;
+
+    // TODO: figure out why things are not drawn in correct order
+
+    for (layer_map.keys()) |k| {
+        const list = layer_map.get(k).?;
+        std.log.debug("drawing layer: {} ({} entities)", .{ k, list.items.len });
+        for (list.items) |ctx| {
+            drawRenderable(self, ctx);
+        }
+    }
+}
+
+fn drawRenderable(self: *Game, ctx: Game.EntityContext) void {
+    const body = ctx.get(Game.C.Body);
+    var renderable = ctx.getConst(Game.C.Renderable);
+
+    if (ctx.tryGetConst(Game.C.Player)) |player| {
+        if (player.destroyed_at) |_| {
+            return;
+        }
+    }
+
+    if (ctx.tryGetConst(Game.C.ScaleGradient)) |scale_gradient| {
+        body.scale += scale_gradient.delta_per_second * self.deltaTime();
+    }
+
+    if (ctx.tryGetConst(Game.C.FadeGradient)) |fade_gradient| {
+        renderable.sprite.tint = renderable.sprite.tint.alpha(fade_gradient.alpha(self.elapsedTime()));
+    }
+
+    renderable.draw(body.position, body.scale, body.rotation);
+    drawEnemyHit(self, ctx, body.*, renderable);
+}
+
+fn drawEnemyHit(
+    self: *Game,
+    ctx: Game.EntityContext,
+    body: Game.C.Body,
+    renderable: Game.C.Renderable,
+) void {
+    if (ctx.tryGetConst(Game.C.Enemy)) |enemy| {
+        const t = self.elapsedTime();
+        if (enemy.hit_fade_ends_at <= t) return;
+
+        const d = enemy.hit_fade_ends_at - t;
+        const ratio: f32 = @floatCast(d / Game.C.Enemy.hit_fade_duration);
+
+        var renderable_fade = renderable;
+        renderable_fade.sprite.tint = .alpha(.white, ratio);
+        renderable_fade.sprite.source = .init(158, 5, 31, 17);
+        renderable_fade.draw(body.position, body.scale, body.rotation);
     }
 }
 

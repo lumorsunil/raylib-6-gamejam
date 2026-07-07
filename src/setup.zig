@@ -10,6 +10,7 @@ pub fn setup(self: *Game) void {
     createCamera(self);
     createSpritesheet(self);
     createSystems(self);
+    setupSystems(self);
     // createDefaultGrid(self) catch unreachable;
 
     setupEntities(self);
@@ -52,24 +53,32 @@ fn createSpritesheet(self: *Game) void {
 }
 
 fn createSystems(self: *Game) void {
+    self.addSingleton(Game.S.Background.init());
+    self.addSingleton(Game.S.Camera.init());
+    self.addSingleton(Game.S.Controllable.init());
+    self.addSingleton(Game.S.DamageOnTouch.init());
+    self.addSingleton(Game.S.DestroyEntities.init());
+    self.addSingleton(Game.S.Enemy.init());
     self.addSingleton(Game.S.Input.init());
     self.addSingleton(Game.S.Physics.init());
-    self.addSingleton(Game.S.Controllable.init());
-    self.addSingleton(Game.S.DestroyEntities.init());
-    self.addSingleton(Game.S.Camera.init());
-    self.addSingleton(Game.S.RelativePosition.init());
     self.addSingleton(Game.S.Player.init());
-    self.addSingleton(Game.S.Enemy.init());
+    self.addSingleton(Game.S.RelativePosition.init());
+}
+
+fn setupSystems(self: *Game) void {
+    const background = self.getSingleton(Game.S.Background);
+    background.setup(self);
 }
 
 fn createPlayer(self: *Game) void {
     const player = self.createEntity();
     const position = self.worldCenterBottom();
     const spritesheet = self.spritesheet();
-    player.add(Game.C.Renderable.initSprite(spritesheet, .init(0, 28, 27, 63)));
+    player.add(Game.C.Renderable.initSprite(spritesheet, .init(29, 74, 17, 31)));
     const renderable = player.get(Game.C.Renderable);
     renderable.sprite.tint = .red;
-    const player_size = renderable.size(0);
+    renderable.sprite.draw_layer = Game.draw_layers.player;
+    const player_size = renderable.size(1, 0);
     player.add(Game.C.Body.init(position.subtract(player_size)));
     player.add(Game.C.Controllable.init());
     player.add(Game.C.Player.init());
