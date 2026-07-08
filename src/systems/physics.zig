@@ -46,6 +46,12 @@ pub fn Physics(comptime options: PhysicsOptions) type {
                     if (self.grid) |*grid| grid.resolveCollisions(game, ctx, body, &.{ .x, .y });
                 }
 
+                if (ctx.tryGet(Game.C.Shard)) |shard| {
+                    if (shard.enable_drag) {
+                        applyDrag(game, body);
+                    }
+                }
+
                 body.acceleration = .init(0, 0);
             }
         }
@@ -65,6 +71,11 @@ pub fn Physics(comptime options: PhysicsOptions) type {
                     },
                 }
             }
+        }
+
+        fn applyDrag(game: *Game, body: *Game.C.Body) void {
+            body.velocity = body.velocity.subtract(body.velocity.scale(3 * game.deltaTime()));
+            body.angular_velocity -= body.angular_velocity * 3 * game.deltaTime();
         }
     };
 }

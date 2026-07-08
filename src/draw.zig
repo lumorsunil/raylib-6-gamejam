@@ -176,39 +176,52 @@ fn lessThan(_: usize, a: usize, b: usize) bool {
 
 fn drawRenderables(self: *Game) void {
     var it = self.entityIterator(.{ Game.C.Renderable, Game.C.Body }, .{Game.C.Invisible});
+    const n_layers = 4;
 
-    var layer_map: std.array_hash_map.Auto(usize, std.ArrayList(Game.EntityContext)) = .empty;
-    defer {
-        for (layer_map.values()) |*list| {
-            list.deinit(self.allocator);
-        }
-        layer_map.deinit(self.allocator);
-    }
-
-    while (it.next()) |ctx| {
-        const renderable = ctx.getConst(Game.C.Renderable);
-        const layer = renderable.layer();
-
-        const entry = layer_map.getOrPut(self.allocator, layer) catch unreachable;
-        if (!entry.found_existing) {
-            entry.value_ptr.* = .empty;
-        }
-
-        entry.value_ptr.append(self.allocator, ctx) catch unreachable;
-    }
-    std.mem.sort(usize, layer_map.keys(), @as(usize, 0), lessThan);
-    layer_map.reIndex(self.allocator) catch unreachable;
-
-    // TODO: figure out why things are not drawn in correct order
-
-    for (layer_map.keys()) |k| {
-        const list = layer_map.get(k).?;
-        std.log.debug("drawing layer: {} ({} entities)", .{ k, list.items.len });
-        for (list.items) |ctx| {
+    for (0..n_layers) |layer| {
+        it.reset();
+        while (it.next()) |ctx| {
+            const renderable = ctx.getConst(Game.C.Renderable);
+            if (renderable.layer() != layer) continue;
             drawRenderable(self, ctx);
         }
     }
 }
+
+// fn drawRenderables(self: *Game) void {
+//     var it = self.entityIterator(.{ Game.C.Renderable, Game.C.Body }, .{Game.C.Invisible});
+//
+//     var layer_map: std.array_hash_map.Auto(usize, std.ArrayList(Game.EntityContext)) = .empty;
+//     defer {
+//         for (layer_map.values()) |*list| {
+//             list.deinit(self.allocator);
+//         }
+//         layer_map.deinit(self.allocator);
+//     }
+//
+//     while (it.next()) |ctx| {
+//         const renderable = ctx.getConst(Game.C.Renderable);
+//         const layer = renderable.layer();
+//
+//         const entry = layer_map.getOrPut(self.allocator, layer) catch unreachable;
+//         if (!entry.found_existing) {
+//             entry.value_ptr.* = .empty;
+//         }
+//
+//         entry.value_ptr.append(self.allocator, ctx) catch unreachable;
+//     }
+//     std.mem.sort(usize, layer_map.keys(), @as(usize, 0), lessThan);
+//     layer_map.reIndex(self.allocator) catch unreachable;
+//
+//     // TODO: figure out why things are not drawn in correct order
+//
+//     for (layer_map.keys()) |k| {
+//         const list = layer_map.get(k).?;
+//         for (list.items) |ctx| {
+//             drawRenderable(self, ctx);
+//         }
+//     }
+// }
 
 fn drawRenderable(self: *Game, ctx: Game.EntityContext) void {
     const body = ctx.get(Game.C.Body);
@@ -217,6 +230,14 @@ fn drawRenderable(self: *Game, ctx: Game.EntityContext) void {
     if (ctx.tryGetConst(Game.C.Player)) |player| {
         if (player.destroyed_at) |_| {
             return;
+        }
+    }
+
+    if (ctx.tryGetConst(Game.C.RelativePosition)) |rel_pos| {
+        if (rel_pos.anchoree.tryGetConst(Game.C.Player)) |player| {
+            if (player.destroyed_at) |_| {
+                return;
+            }
         }
     }
 
@@ -230,6 +251,7 @@ fn drawRenderable(self: *Game, ctx: Game.EntityContext) void {
 
     renderable.draw(body.position, body.scale, body.rotation);
     drawEnemyHit(self, ctx, body.*, renderable);
+    drawShardShimmer(self, ctx, body.*);
 }
 
 fn drawEnemyHit(
@@ -250,6 +272,29 @@ fn drawEnemyHit(
         renderable_fade.sprite.source = .init(158, 5, 31, 17);
         renderable_fade.draw(body.position, body.scale, body.rotation);
     }
+}
+
+fn drawShardShimmer(
+    self: *Game,
+    ctx: Game.EntityContext,
+    body: Game.C.Body,
+) void {
+    const shard = ctx.tryGetConst(Game.C.Shard) orelse return;
+
+    const t = self.elapsedTime();
+
+    const time_factor = 6;
+
+    const sweep_ratio = @mod(t * time_factor, 8);
+    if (sweep_ratio >= 4) return;
+
+    const p_rel = self.getRelativePos(body.position);
+    const d = 1 - @abs((sweep_ratio - 2) - p_rel.x + p_rel.y);
+    const ratio: f32 = @floatCast(d);
+
+    var renderable_fade = shard.shimmer_renderable(self);
+    renderable_fade.sprite.tint = .alpha(.white, ratio);
+    renderable_fade.draw(body.position, body.scale, body.rotation);
 }
 
 fn drawGrid(self: *Game) void {
@@ -273,7 +318,17 @@ fn drawHUD(self: *Game) void {
     const player = self.player();
     const player_component = player.getConst(Game.C.Player);
     const lives = player_component.lives;
-    var position = self.worldCenterTop();
-    position.y += 16;
-    drawTextCentered("LIVES={}", .{lives}, 16, position, .white);
+    // const shards = player_component.shards;
+    // var position = self.worldCenterTop();
+    // position.y += 16;
+    // drawTextCentered("LIVES={} SHARDS={}", .{ lives, shards }, 16, position, .white);
+    var lives_renderable = self.initSprite(.init(76, 84, 5, 11));
+    lives_renderable.sprite.tint = .red;
+
+    var cursor = self.worldTopLeft().add(lives_renderable.size(1, 0));
+
+    for (0..lives) |_| {
+        lives_renderable.draw(cursor, 1, 0);
+        cursor.x += lives_renderable.size(1, 0).x + 4;
+    }
 }

@@ -8,6 +8,10 @@ pub const Background = struct {
     pub const spawn_rate_variance = 6;
     pub const velocity_y_min = 10;
     pub const velocity_y_variance = 0;
+    pub const star_alpha_variance = 0.5;
+    pub const star_alpha_min = 0.3;
+    pub const star_brightness_variance = 0.3;
+    pub const star_brightness_min = 0.2;
 
     pub const sprite_sources: []const rl.Rectangle = &.{
         .init(10, 132, 1, 1), // small star
@@ -26,6 +30,17 @@ pub const Background = struct {
         1, // mars
         5, // galaxy
     };
+
+    pub const sprite_sources_types: []const SpriteType = &.{
+        .star, // normal star
+        .star, // straight star
+        .star, // angled star
+        .planet, // earth
+        .planet, // mars
+        .galaxy, // galaxy
+    };
+
+    pub const SpriteType = enum { star, galaxy, planet };
 
     pub fn init() @This() {
         return .{};
@@ -83,10 +98,29 @@ pub const Background = struct {
         return ctx;
     }
 
+    fn randomColor(game: *Game) Game.Color {
+        return .fromHSV(
+            game.random().float(f32) * 360,
+            game.random().float(f32),
+            game.random().float(f32) * star_brightness_variance + star_brightness_min,
+        );
+    }
+
+    fn randomAlpha(game: *Game) f32 {
+        _ = game;
+        return 1;
+        // return game.random().float(f32) * star_alpha_variance + star_alpha_min;
+    }
+
     fn randomSprite(game: *Game) Game.C.Renderable {
         const i = game.random().weightedIndex(f32, sprite_sources_weights);
         var sprite = game.initSprite(sprite_sources[i]);
         sprite.sprite.draw_layer = Game.draw_layers.background;
+        if (sprite_sources_types[i] != .planet) {
+            const color = randomColor(game);
+            const alpha = randomAlpha(game);
+            sprite.sprite.tint = .alpha(color, alpha);
+        }
         return sprite;
     }
 };

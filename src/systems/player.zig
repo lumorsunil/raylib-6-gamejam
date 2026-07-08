@@ -16,6 +16,19 @@ pub const Player = struct {
             return game.gameOver();
         }
 
+        self.updateDeath(game, player, player_component);
+        updateWeapons(game, player, player_component);
+        clampPlayerToWorld(game, player);
+        destroyOutOfBoundsProjectiles(game);
+        pickupShards(game, player, player_component);
+    }
+
+    fn updateDeath(
+        self: *@This(),
+        game: *Game,
+        player: Game.EntityContext,
+        player_component: *Game.C.Player,
+    ) void {
         if (player_component.destroyed_at) |destroyed_at| {
             if (!self.spawned_explosion) {
                 spawnExplosion(game, player.getConst(Game.C.Body).position);
@@ -33,20 +46,35 @@ pub const Player = struct {
                 return;
             }
         }
+    }
 
-        if (player_component.next_shoot_at <= game.elapsedTime()) {
-            player_component.next_shoot_at = game.elapsedTime() + player_component.shoot_cooldown;
-            self.shoot(game, player);
+    fn updateWeapons(
+        game: *Game,
+        player: Game.EntityContext,
+        player_component: *Game.C.Player,
+    ) void {
+        if (player_component.destroyed_at != null) return;
+
+        updateWeapon(game, &player_component.base_weapon, player, player_component);
+
+        if (player_component.extra_weapon) |*extra_weapon| {
+            updateWeapon(game, extra_weapon, player, player_component);
         }
+    }
 
-        clampPlayerToWorld(game, player);
+    fn updateWeapon(
+        game: *Game,
+        weapon: *Game.C.Player.PlayerWeapon,
+        player: Game.EntityContext,
+        player_component: *Game.C.Player,
+    ) void {
+        weapon.level = weapon.levelByShards(player_component.shards);
+        const weapon_renderable = player_component.weapon_ctx.get(Game.C.Renderable);
+        weapon_renderable.* = weapon.weaponSprite(game);
 
-        var it = game.entityIterator(.{ Game.C.PlayerProjectile, Game.C.Body }, .{});
-
-        while (it.next()) |ctx| {
-            if (game.isOutOfBounds(ctx, .allow_bottom)) {
-                ctx.destroy();
-            }
+        if (weapon.next_shoot_at <= game.elapsedTime()) {
+            const body = player.getConst(Game.C.Body);
+            weapon.shoot(game, body.position);
         }
     }
 
@@ -65,20 +93,14 @@ pub const Player = struct {
         if (hitbox.bottom() > max_bounds.y) body.position.y = max_bounds.y - half_size_y;
     }
 
-    fn shoot(_: *Player, game: *Game, player: Game.EntityContext) void {
-        const body = player.getConst(Game.C.Body);
-        spawnProjectile(game, body.position);
-    }
+    fn destroyOutOfBoundsProjectiles(game: *Game) void {
+        var it = game.entityIterator(.{ Game.C.PlayerProjectile, Game.C.Body }, .{});
 
-    fn spawnProjectile(game: *Game, position: Game.Vector) void {
-        const ctx = game.createEntity();
-        ctx.add(Game.C.Body.init(position));
-        const body = ctx.get(Game.C.Body);
-        body.velocity.y = -500;
-        ctx.add(Game.C.Renderable.initSprite(game.spritesheet(), .init(28, 38, 7, 13)));
-        const sprite = ctx.get(Game.C.Renderable);
-        sprite.sprite.tint = .orange;
-        ctx.add(Game.C.PlayerProjectile.init(1));
+        while (it.next()) |ctx| {
+            if (game.isOutOfBounds(ctx, .allow_bottom)) {
+                ctx.destroy();
+            }
+        }
     }
 
     fn spawnExplosion(game: *Game, position: Game.Vector) void {
@@ -149,5 +171,43 @@ pub const Player = struct {
         shard_5.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
         shard_5.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
         shard_5.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
+    }
+
+    fn pickupShards(
+        game: *Game,
+        player: Game.EntityContext,
+        player_component: *Game.C.Player,
+    ) void {
+        if (player_component.destroyed_at != null) return;
+
+        var it = game.entityIterator(.{Game.C.Shard}, .{});
+        const player_body = player.getConst(Game.C.Body);
+
+        const min_hoover_distance: f32 = 50 * 50;
+        const pickup_distance: f32 = 5 * 5;
+
+        while (it.next()) |ctx| {
+            const body = ctx.get(Game.C.Body);
+            const distance = body.position.distanceSqr(player_body.position);
+            const shard = ctx.get(Game.C.Shard);
+
+            if (distance <= pickup_distance) {
+                ctx.destroy();
+                player_component.shards += shard.value();
+                continue;
+            }
+
+            if (distance > min_hoover_distance) {
+                shard.enable_drag = true;
+                continue;
+            }
+
+            shard.enable_drag = false;
+
+            const hoover_ratio = (min_hoover_distance - distance) / min_hoover_distance;
+            const hoover_speed = hoover_ratio * 100;
+
+            body.velocity = player_body.position.subtract(body.position).normalize().scale(hoover_speed);
+        }
     }
 };

@@ -108,6 +108,14 @@ pub const Game = struct {
         return .init(base_x / z, base_y / z);
     }
 
+    pub fn getAbsolutePos(self: @This(), position: Vector) Vector {
+        return position.multiply(self.worldSize()).add(self.worldPosition());
+    }
+
+    pub fn getRelativePos(self: @This(), position: Vector) Vector {
+        return position.subtract(self.worldPosition()).divide(self.worldSize());
+    }
+
     pub fn worldCenter(self: @This()) Vector {
         const world_pos = self.worldPosition();
         const world_size = self.worldSize();
@@ -127,6 +135,10 @@ pub const Game = struct {
         const world_size = self.worldSize();
 
         return world_size.scale(0.5).add(world_pos).multiply(.init(1, 0));
+    }
+
+    pub fn worldTopLeft(self: @This()) Vector {
+        return self.getAbsolutePos(.init(0, 0));
     }
 
     pub fn worldPosition(self: @This()) Vector {
@@ -321,6 +333,9 @@ pub const Game = struct {
         self.screen_state = .menu;
         self.destroyAllEntities();
         @import("setup.zig").setupEntities(self);
+        @import("setup.zig").setupSystems(self);
+        const enemy_system = self.getSingleton(Game.S.Enemy);
+        enemy_system.reset();
     }
 
     fn destroyAllEntities(self: *Game) void {

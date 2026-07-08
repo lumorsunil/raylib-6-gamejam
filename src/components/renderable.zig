@@ -76,7 +76,7 @@ pub const Renderable = union(enum) {
             dest.width *= scale;
             dest.height *= scale;
             const origin_ = origin(.{ .sprite = self }, scale, rotation);
-            rl.drawTexturePro(self.texture, self.source, dest, origin_, rotation, self.tint);
+            rl.drawTexturePro(self.texture, self.source, dest, origin_, rotation * 180 / std.math.pi, self.tint);
         }
 
         pub fn size(self: Sprite, _: f32) Game.Vector {

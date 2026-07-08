@@ -35,10 +35,20 @@ const EnemyDef = struct {
 
     pub fn health(self: @This()) usize {
         return switch (self.tier) {
-            0 => 2,
-            1 => 5,
-            2 => 10,
-            3 => 20,
+            0 => 4,
+            1 => 10,
+            2 => 20,
+            3 => 40,
+            else => 1,
+        };
+    }
+
+    pub fn shardsDropped(self: @This()) usize {
+        return switch (self.tier) {
+            0 => 4,
+            1 => 10,
+            2 => 20,
+            3 => 40,
             else => 1,
         };
     }
@@ -207,7 +217,6 @@ const stages = [_]Stage{
 };
 
 pub const Enemy = struct {
-    enabled: bool = true,
     current_stage: Stage = stages[0],
     current_stage_index: usize = 0,
     current_wave: Wave = stages[0].nextWave(),
@@ -216,6 +225,12 @@ pub const Enemy = struct {
 
     pub fn init() @This() {
         return .{};
+    }
+
+    pub fn reset(self: *Enemy) void {
+        self.current_stage = stages[0];
+        self.current_stage_index = 0;
+        self.current_wave = stages[0].nextWave();
     }
 
     pub fn update(self: *Enemy, game: *Game) void {
@@ -330,7 +345,9 @@ pub const Enemy = struct {
         const enemy_component = enemy.get(Game.C.Enemy);
         enemy_component.health -|= 1;
         if (enemy_component.health == 0) {
-            spawnExplosion(game, enemy.getConst(Game.C.Body).position);
+            const enemy_body = enemy.getConst(Game.C.Body);
+            spawnExplosion(game, enemy_body.position);
+            spawnShards(game, enemy_component.*, enemy_body.position);
             return enemy.destroy();
         }
         enemy_component.hit_fade_ends_at = t + Game.C.Enemy.hit_fade_duration;
@@ -404,6 +421,56 @@ pub const Enemy = struct {
         shard_5.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
         shard_5.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
         shard_5.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
+    }
+
+    fn spawnShards(game: *Game, enemy: Game.C.Enemy, position: Game.Vector) void {
+        const enemy_def = EnemyDef.init(enemy.tier, null);
+        var n_shards = enemy_def.shardsDropped();
+
+        const large_value = Game.C.Shard.Type.large.value();
+        const medium_value = Game.C.Shard.Type.medium.value();
+        // const small_value = Game.C.Shard.Type.small.value();
+
+        const n_large_max = @divFloor(n_shards, large_value);
+        const n_large_min = n_large_max -| 2;
+        const n_large = game.random().intRangeAtMost(usize, n_large_min, n_large_max);
+        n_shards -= n_large * large_value;
+
+        const n_medium_max = @divFloor(n_shards, medium_value);
+        const n_medium_min = n_medium_max -| 2;
+        const n_medium = game.random().intRangeAtMost(usize, n_medium_min, n_medium_max);
+        n_shards -= n_medium * medium_value;
+
+        const n_small = n_shards;
+
+        for (0..n_large) |_| {
+            spawnShard(game, .large, position);
+        }
+
+        for (0..n_medium) |_| {
+            spawnShard(game, .medium, position);
+        }
+
+        for (0..n_small) |_| {
+            spawnShard(game, .small, position);
+        }
+    }
+
+    const shard_speed_variance = 50;
+    const shard_speed_min = 150;
+
+    fn spawnShard(game: *Game, shard_type: Game.C.Shard.Type, position: Game.Vector) void {
+        const ctx = game.createEntity();
+        ctx.add(Game.C.Body.init(position));
+        const body = ctx.get(Game.C.Body);
+        const random_speed = game.random().float(f32) * shard_speed_variance + shard_speed_min;
+        const r = game.random().float(f32) * std.math.pi * 2;
+        const random_vel = Game.Vector.init(random_speed, 0).rotate(r);
+        body.velocity = random_vel;
+        body.angular_velocity = random_speed;
+        const shard = Game.C.Shard.init(shard_type);
+        ctx.add(shard);
+        ctx.add(shard.renderable(game));
     }
 
     fn updateMerges(self: *Enemy, game: *Game) void {

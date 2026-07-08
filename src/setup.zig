@@ -65,7 +65,7 @@ fn createSystems(self: *Game) void {
     self.addSingleton(Game.S.RelativePosition.init());
 }
 
-fn setupSystems(self: *Game) void {
+pub fn setupSystems(self: *Game) void {
     const background = self.getSingleton(Game.S.Background);
     background.setup(self);
 }
@@ -82,6 +82,17 @@ fn createPlayer(self: *Game) void {
     player.add(Game.C.Body.init(position.subtract(player_size)));
     player.add(Game.C.Controllable.init());
     player.add(Game.C.Player.init());
+
+    const weapon_ctx = self.createEntity();
+    weapon_ctx.add(Game.C.Body.init(.init(0, 0)));
+    weapon_ctx.add(Game.C.RelativePosition.init(player, .init(0, -8), true));
+    weapon_ctx.add(self.initSprite(.init(76, 55, 7, 14)));
+    const weapon_renderable = weapon_ctx.get(Game.C.Renderable);
+    weapon_renderable.sprite.tint = .sky_blue;
+    weapon_renderable.sprite.draw_layer = Game.draw_layers.player + 1;
+
+    const player_component = player.get(Game.C.Player);
+    player_component.weapon_ctx = weapon_ctx;
 }
 
 fn createDefaultGrid(self: *Game) !void {
@@ -100,4 +111,22 @@ fn createDefaultGrid(self: *Game) !void {
     }
 
     self.physics().grid = grid;
+}
+
+fn createDebugShards(self: *Game) void {
+    const n_columns = 100;
+    const n_rows = 100;
+    const size = Game.Vector.init(@floatFromInt(n_columns), @floatFromInt(n_rows));
+
+    for (0..n_columns) |x| {
+        for (0..n_rows) |y| {
+            const ctx = self.createEntity();
+            const position_rel = Game.Vector.init(@floatFromInt(x), @floatFromInt(y)).divide(size);
+            const position = self.getAbsolutePos(position_rel);
+            ctx.add(Game.C.Body.init(position));
+            const shard = Game.C.Shard.init(.small);
+            ctx.add(shard);
+            ctx.add(shard.renderable(self));
+        }
+    }
 }

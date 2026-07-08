@@ -12,3 +12,4 @@ pub const PlayerProjectile = @import("components/player-projectile.zig").PlayerP
 pub const RelativePosition = @import("components/relative-position.zig").RelativePosition;
 pub const Renderable = @import("components/renderable.zig").Renderable;
 pub const ScaleGradient = @import("components/scale-gradient.zig").ScaleGradient;
+pub const Shard = @import("components/shard.zig").Shard;
