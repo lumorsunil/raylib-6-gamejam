@@ -12,10 +12,12 @@ pub const Game = struct {
     allocator: std.mem.Allocator,
     reg: ecs.Registry,
     random_io: std.Random.IoSource,
-    screen_state: ScreenState = if (mode == .prod) .logo else .gameplay,
+    screen_state: ScreenState = if (mode == .prod) .logo else .modification,
     logo: Logo = .init(0),
     menu: Menu = .init(),
     settings: Settings = .init(),
+    shop_state: Shop,
+    modification_state: ModificationState = .init(),
     game_over: GameOver = .init(0),
     wants_to_quit: bool = false,
 
@@ -23,6 +25,8 @@ pub const Game = struct {
         logo,
         menu,
         gameplay,
+        shop,
+        modification,
         ending,
         game_over,
     };
@@ -30,6 +34,8 @@ pub const Game = struct {
     pub const Logo = @import("logo.zig").Logo;
     pub const Menu = @import("menu.zig").Menu;
     pub const Settings = @import("settings.zig").Settings;
+    pub const Shop = @import("shop.zig").Shop;
+    pub const ModificationState = @import("modification-state.zig").ModificationState;
     pub const GameOver = @import("game-over.zig").GameOver;
 
     pub const Camera = rl.Camera2D;
@@ -40,17 +46,19 @@ pub const Game = struct {
     pub const C = @import("components.zig");
     pub const S = @import("systems.zig");
 
-    pub fn init(io: std.Io, allocator: std.mem.Allocator) @This() {
+    pub fn init(io: std.Io, allocator: std.mem.Allocator) !@This() {
         return .{
             .io = io,
             .allocator = allocator,
             .reg = .init(allocator),
             .random_io = .{ .io = io },
+            .shop_state = try .init(allocator),
         };
     }
 
     pub fn deinit(self: *@This()) void {
         self.physics().deinit(self.allocator);
+        self.shop_state.deinit(self.allocator);
         self.reg.deinit();
         rl.closeWindow();
     }
@@ -82,7 +90,11 @@ pub const Game = struct {
     pub const draw = @import("draw.zig").draw;
 
     pub fn zoom(_: @This()) f32 {
-        return 2;
+        if (mode == .dev) {
+            return 3;
+        } else {
+            return 2;
+        }
     }
 
     pub fn fps(_: @This()) u8 {
@@ -98,14 +110,25 @@ pub const Game = struct {
     }
 
     pub fn screenSize(_: @This()) Vector {
-        return .init(720, 720);
+        if (mode == .dev) {
+            return .init(1080, 1080);
+        } else {
+            return .init(720, 720);
+        }
     }
 
     pub fn worldSize(self: @This()) Vector {
-        const base_x = 405;
-        const base_y = 720;
-        const z = self.zoom();
-        return .init(base_x / z, base_y / z);
+        if (mode == .dev) {
+            const base_x = 608;
+            const base_y = 1080;
+            const z = self.zoom();
+            return .init(base_x / z, base_y / z);
+        } else {
+            const base_x = 405;
+            const base_y = 720;
+            const z = self.zoom();
+            return .init(base_x / z, base_y / z);
+        }
     }
 
     pub fn getAbsolutePos(self: @This(), position: Vector) Vector {
@@ -332,7 +355,7 @@ pub const Game = struct {
         self.menu.setMenu(Menu.main_menu);
         self.screen_state = .menu;
         self.destroyAllEntities();
-        @import("setup.zig").setupEntities(self);
+        @import("setup.zig").setupEntities(self) catch unreachable;
         @import("setup.zig").setupSystems(self);
         const enemy_system = self.getSingleton(Game.S.Enemy);
         enemy_system.reset();
@@ -379,4 +402,20 @@ pub const Game = struct {
         .enemy = 1,
         .player = 2,
     };
+
+    pub fn shop(self: *Game) void {
+        self.screen_state = .shop;
+        self.shop_state.setup(self) catch unreachable;
+    }
+
+    pub fn modification(self: *Game) void {
+        self.screen_state = .modification;
+        self.modification_state.setup(self);
+    }
+
+    pub fn nextLevel(self: *Game) void {
+        self.screen_state = .gameplay;
+        const enemy_system = self.getSingleton(Game.S.Enemy);
+        enemy_system.setup(self);
+    }
 };

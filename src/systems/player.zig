@@ -16,9 +16,9 @@ pub const Player = struct {
             return game.gameOver();
         }
 
+        clampPlayerToWorld(game, player);
         self.updateDeath(game, player, player_component);
         updateWeapons(game, player, player_component);
-        clampPlayerToWorld(game, player);
         destroyOutOfBoundsProjectiles(game);
         pickupShards(game, player, player_component);
     }
@@ -55,28 +55,51 @@ pub const Player = struct {
     ) void {
         if (player_component.destroyed_at != null) return;
 
-        updateWeapon(game, &player_component.base_weapon, player, player_component);
+        var it = player_component.weaponIterator();
 
-        if (player_component.extra_weapon) |*extra_weapon| {
-            updateWeapon(game, extra_weapon, player, player_component);
+        while (it.next()) |entry| {
+            updateWeapon(game, entry.item, entry.slot_index, player, player_component);
         }
+
+        // updateWeapon(game, &player_component.base_weapon, player, player_component);
+        //
+        // if (player_component.extra_weapon) |*extra_weapon| {
+        //     updateWeapon(game, extra_weapon, player, player_component);
+        // }
     }
 
     fn updateWeapon(
         game: *Game,
-        weapon: *Game.C.Player.PlayerWeapon,
+        weapon: *Game.C.Item,
+        slot_index: usize,
         player: Game.EntityContext,
         player_component: *Game.C.Player,
     ) void {
-        weapon.level = weapon.levelByShards(player_component.shards);
-        const weapon_renderable = player_component.weapon_ctx.get(Game.C.Renderable);
-        weapon_renderable.* = weapon.weaponSprite(game);
+        weapon.item_type.weapon.update();
 
-        if (weapon.next_shoot_at <= game.elapsedTime()) {
+        if (weapon.item_type.weapon.next_shoot_at <= game.elapsedTime()) {
             const body = player.getConst(Game.C.Body);
-            weapon.shoot(game, body.position);
+            const offset = player_component.body.offset(game, slot_index);
+            const position = body.position.add(offset);
+            weapon.item_type.weapon.shoot(game, weapon, position);
         }
     }
+
+    // fn updateWeapon(
+    //     game: *Game,
+    //     weapon: *Game.C.Player.PlayerWeapon,
+    //     player: Game.EntityContext,
+    //     player_component: *Game.C.Player,
+    // ) void {
+    //     weapon.level = weapon.levelByShards(player_component.shards);
+    //     const weapon_renderable = player_component.weapon_ctx.get(Game.C.Renderable);
+    //     weapon_renderable.* = weapon.weaponSprite(game);
+    //
+    //     if (weapon.next_shoot_at <= game.elapsedTime()) {
+    //         const body = player.getConst(Game.C.Body);
+    //         weapon.shoot(game, body.position);
+    //     }
+    // }
 
     fn clampPlayerToWorld(game: *Game, ctx: Game.EntityContext) void {
         const body = ctx.get(Game.C.Body);

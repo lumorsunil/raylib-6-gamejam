@@ -9,6 +9,8 @@ pub fn draw(self: *Game) void {
         .logo => drawLogo(self),
         .menu => drawMenu(self),
         .gameplay => drawGameplay(self),
+        .shop => drawShop(self),
+        .modification => drawModification(self),
         .ending => drawEnding(self),
         .game_over => drawGameOver(self),
     }
@@ -73,11 +75,7 @@ fn drawGameplay(self: *Game) void {
     drawGrid(self);
     drawRenderables(self);
     // debugDraw(self);
-    const screen_size = self.screenSize();
-    const world_pos = self.worldPosition();
-    const world_size = self.worldSize();
-    rl.drawRectangleV(.init(0, 0), .init(world_pos.x, screen_size.y), .black);
-    rl.drawRectangleV(.init(world_pos.x + world_size.x, 0), .init(screen_size.x, screen_size.y), .black);
+    drawBorder(self);
     self.camera().end();
     rl.drawFPS(8, 8);
 
@@ -88,6 +86,462 @@ fn drawGameplay(self: *Game) void {
     drawHUD(self);
     // debugDrawUI(self);
     ui_camera.end();
+}
+
+fn drawShop(self: *Game) void {
+    rl.clearBackground(.gray);
+    self.camera().begin();
+    drawBorder(self);
+
+    const flen: f32 = @floatFromInt(self.shop_state.items.len);
+    const x_step = 1.0 / (flen + 1);
+    var cursor = Game.Vector.init(x_step, 0.5);
+    const player = self.player();
+    const player_component = player.get(Game.C.Player);
+
+    const mouse_pos = rl.getScreenToWorld2D(rl.getMousePosition(), self.camera().*);
+
+    const selected_item = self.shop_state.selectedItem();
+    const selected_item_cost = selected_item.cost();
+    const can_afford = selected_item_cost <= player_component.shards;
+    drawSkipButton(self);
+    drawBuyButton(self, selected_item_cost, can_afford);
+
+    if (rl.isMouseButtonPressed(.left)) {
+        if (rl.checkCollisionPointRec(mouse_pos, skipButtonRec(self))) {
+            self.modification();
+        } else if (can_afford and rl.checkCollisionPointRec(mouse_pos, buyButtonRec(self, selected_item_cost))) {
+            player_component.shards -= selected_item_cost;
+            _ = player_component.inventory.appendItem(selected_item);
+            self.modification();
+        }
+    }
+
+    drawItemDescription(self, selected_item);
+
+    for (self.shop_state.items, 0..) |item, i| {
+        const empty_slot_renderable = Game.C.Item.emptySlotRenderable(self);
+        const item_renderable = item.sprite(self);
+        const item_size = empty_slot_renderable.size(1, 0);
+        const abs_pos = self.getAbsolutePos(cursor);
+        empty_slot_renderable.draw(abs_pos, 1, 0);
+        item_renderable.draw(abs_pos, 1, 0);
+
+        const cost = item.cost();
+        const shard_position = abs_pos.add(.init(0, item_size.y + 8));
+        const cost_color: Game.Color = if (cost > player_component.shards) .red else .white;
+        drawShardCounter(self, shard_position, cost, 12, .black, cost_color);
+
+        cursor.x += x_step;
+
+        if (i == self.shop_state.selected_item) {
+            const tl = abs_pos.subtract(empty_slot_renderable.origin(1, 0));
+            rl.drawRectangleLinesEx(.init(tl.x, tl.y, item_size.x, item_size.y), 1, .yellow);
+        }
+
+        if (empty_slot_renderable.containsPoint(abs_pos, mouse_pos, 1, 0)) {
+            drawItemDescription(self, item);
+
+            if (rl.isMouseButtonPressed(.left)) {
+                self.shop_state.selected_item = i;
+            }
+        }
+    }
+
+    const player_shard_position = self.getAbsolutePos(.init(0.5, 0.85));
+    drawShardCounter(self, player_shard_position, player_component.shards, 14, .alpha(.black, 0), .white);
+
+    self.camera().end();
+}
+
+fn drawShardCounter(
+    self: *Game,
+    position: Game.Vector,
+    amount: usize,
+    font_size: f32,
+    bg_color: Game.Color,
+    text_color: Game.Color,
+) void {
+    const shard = Game.C.Shard.init(.small);
+    const shard_renderable = shard.renderable(self);
+    const shard_rotation: f32 = @floatCast(@mod(self.elapsedTime(), std.math.pi * 2));
+    const shard_size = shard_renderable.size(1, 0);
+
+    const text_width = measureText("{}", .{amount}, font_size);
+    const total_width = shard_size.x + 2 + text_width;
+    const cost_offset = Game.Vector.init(total_width / 2, 0);
+
+    const shard_position = position.subtract(cost_offset);
+    const cost_tl = shard_position.subtract(shard_size.scale(0.5)).subtract(.init(0, 4));
+    const padding = Game.Vector.init(4, 4);
+
+    rl.drawRectangleV(
+        cost_tl.subtract(padding),
+        padding.scale(2).add(.init(total_width + 4, font_size)),
+        bg_color,
+    );
+
+    shard_renderable.draw(shard_position, 1, shard_rotation);
+    const cost_position = shard_position.add(.init(shard_size.x + 2, -font_size / 2));
+    drawText("{}", .{amount}, font_size, cost_position, text_color);
+}
+
+const button_font_size = 10;
+
+fn buttonRec(
+    comptime fmt: []const u8,
+    args: anytype,
+    position: Game.Vector,
+) rl.Rectangle {
+    const padding = Game.Vector.init(8, 8);
+    const width = measureText(fmt, args, button_font_size);
+    const button_size = padding.add(.init(width, button_font_size));
+    const tl = position.subtract(button_size.scale(0.5));
+    return .init(tl.x, tl.y, button_size.x, button_size.y);
+}
+
+fn drawButton(
+    comptime fmt: []const u8,
+    args: anytype,
+    position: Game.Vector,
+    color: Game.Color,
+    text_color: Game.Color,
+) void {
+    const rec = buttonRec(fmt, args, position);
+    rl.drawRectangleRec(rec, color);
+    drawTextCentered(fmt, args, button_font_size, position, text_color);
+}
+
+fn skipButtonRec(self: *Game) rl.Rectangle {
+    const position = self.worldCenter().subtract(.init(32, -64));
+    return buttonRec("SKIP", .{}, position);
+}
+
+fn drawSkipButton(self: *Game) void {
+    const position = self.worldCenter().subtract(.init(32, -64));
+    drawButton("SKIP", .{}, position, .red, .white);
+}
+
+fn buyButtonRec(self: *Game, cost: usize) rl.Rectangle {
+    const position = self.worldCenter().subtract(.init(-32, -64));
+    return buttonRec("BUY {}", .{cost}, position);
+}
+
+fn drawBuyButton(self: *Game, cost: usize, can_afford: bool) void {
+    const position = self.worldCenter().subtract(.init(-32, -64));
+    drawButton(
+        "BUY {}",
+        .{cost},
+        position,
+        if (can_afford) .green else .dark_gray,
+        if (can_afford) .white else .light_gray,
+    );
+}
+
+fn drawItemDescription(self: *Game, item: Game.C.Item) void {
+    const tl = self.getAbsolutePos(.init(0.1, 0.05));
+    const br = self.getAbsolutePos(.init(0.9, 0.45));
+    const size = br.subtract(tl);
+
+    rl.drawRectangleV(tl, size, .black);
+
+    drawText("{f}", .{item}, 8, tl.add(.init(3, 3)), .white);
+}
+
+fn drawModification(self: *Game) void {
+    rl.clearBackground(.gray);
+    self.camera().begin();
+    drawBorder(self);
+
+    if (self.modification_state.selectedItem()) |item| {
+        drawItemDescription(self, item);
+    }
+    drawModificationShip(self);
+    drawInventory(self);
+    drawDrag(self);
+    drawNextLevelButton(self);
+
+    self.camera().end();
+}
+
+fn drawModificationShip(self: *Game) void {
+    const tl = self.getAbsolutePos(.init(0.1, 0.50));
+    const br = self.getAbsolutePos(.init(0.9, 0.65));
+    const size = br.subtract(tl);
+
+    rl.drawRectangleV(tl, size, .black);
+
+    const player = self.player();
+    const player_component = player.get(Game.C.Player);
+
+    const position = tl.add(size.scale(0.5));
+
+    player_component.body.body_type.modificationSprite(self).draw(position, 2, 0);
+    const mouse_pos = rl.getScreenToWorld2D(rl.getMousePosition(), self.camera().*);
+
+    for (player_component.body.slots, 0..) |slot, i| {
+        const item = slot orelse continue;
+        const offset = player_component.body.offset(self, i);
+        const center = position.add(offset);
+        item.sprite(self).draw(center, 2, 0);
+
+        if (rl.isMouseButtonPressed(.left)) {
+            if (item.sprite(self).containsPoint(center, mouse_pos, 2, 0)) {
+                self.modification_state.selected_item = i;
+                self.modification_state.selected_item_inventory = player_component.body.slots;
+                self.modification_state.is_dragging = true;
+            }
+        }
+
+        if (self.modification_state.isItemSelected(i, player_component.body.slots)) {
+            const selection_border = self.initSprite(.init(93, 101, 17, 19));
+            selection_border.draw(center, 2, 0);
+        }
+    }
+
+    if (self.modification_state.is_dragging) {
+        if (rl.isMouseButtonReleased(.left)) {
+            const selected_item = self.modification_state.selectedItemPtr().?;
+
+            for (player_component.body.slots, 0..) |*slot, i| {
+                const offset = player_component.body.offset(self, i);
+                const center = position.add(offset);
+
+                if (Game.C.Item.emptySlotRenderable(self).containsPoint(center, mouse_pos, 2, 0)) {
+                    if (slot == selected_item) break;
+
+                    if (canMerge(selected_item, slot)) {
+                        merge(self, selected_item, slot);
+                        if (slot.* == null) {
+                            swapItems(selected_item, slot);
+                        }
+                    } else {
+                        swapItems(selected_item, slot);
+                    }
+
+                    self.modification_state.selected_item = null;
+                    self.modification_state.selected_item_inventory = null;
+
+                    break;
+                }
+            }
+        } else {
+            const selected_item = self.modification_state.selectedItemPtr().?;
+
+            for (0..player_component.body.slots.len) |i| {
+                const offset = player_component.body.offset(self, i);
+                const center = position.add(offset);
+                const slot_item = &player_component.body.slots[i];
+
+                if (Game.C.Item.emptySlotRenderable(self).containsPoint(center, mouse_pos, 2, 0)) {
+                    if (selected_item == slot_item) break;
+
+                    if (canMerge(selected_item, slot_item)) {
+                        const merge_border = self.initSprite(.init(71, 142, 19, 21));
+                        merge_border.draw(center, 2, 0);
+                    } else {
+                        const swap_border = self.initSprite(.init(75, 101, 17, 19));
+                        swap_border.draw(center, 2, 0);
+                    }
+
+                    break;
+                }
+            }
+        }
+    }
+}
+
+fn drawInventory(self: *Game) void {
+    const tl = self.getAbsolutePos(.init(0.1, 0.70));
+    const br = self.getAbsolutePos(.init(0.9, 0.85));
+    const size = br.subtract(tl);
+
+    const player = self.player();
+    const player_component = player.get(Game.C.Player);
+
+    rl.drawRectangleV(tl, size, .black);
+
+    const empty_slot = Game.C.Item.emptySlotRenderable(self);
+
+    const n_cols = Game.C.Player.Inventory.n_item_cols;
+    const n_rows = Game.C.Player.Inventory.n_item_rows;
+    const width = 16;
+    const height = 14;
+    const slot_size = Game.Vector.init(width, height);
+
+    const mouse_pos = rl.getScreenToWorld2D(rl.getMousePosition(), self.camera().*);
+
+    const start = tl.add(.init(12, 12));
+
+    var selected_position: ?Game.Vector = null;
+
+    for (0..n_cols) |x| {
+        for (0..n_rows) |y| {
+            const is_even = @mod(y, 2) == 0;
+            const offset_x: f32 = if (is_even) width / 2.0 else 0;
+            const offset = Game.Vector.init(
+                @floatFromInt(x),
+                @floatFromInt(y),
+            ).multiply(slot_size).add(.init(offset_x, 0));
+            const position = start.add(offset);
+            empty_slot.draw(position, 1, 0);
+            const i = x + y * n_cols;
+
+            const item = player_component.inventory.items[i] orelse continue;
+            item.sprite(self).draw(position, 1, 0);
+
+            if (self.modification_state.isItemSelected(i, player_component.inventory.items)) {
+                selected_position = position;
+            }
+
+            if (rl.isMouseButtonPressed(.left)) {
+                if (item.sprite(self).containsPoint(position, mouse_pos, 1, 0)) {
+                    self.modification_state.selected_item = i;
+                    self.modification_state.selected_item_inventory = player_component.inventory.items;
+                    self.modification_state.is_dragging = true;
+                }
+            }
+        }
+    }
+
+    if (self.modification_state.is_dragging) {
+        if (rl.isMouseButtonReleased(.left)) {
+            self.modification_state.is_dragging = false;
+
+            const selected_item = self.modification_state.selectedItemPtr() orelse return;
+
+            const slot_renderable = Game.C.Item.emptySlotRenderable(self);
+
+            outer: for (0..n_cols) |x| {
+                for (0..n_rows) |y| {
+                    const is_even = @mod(y, 2) == 0;
+                    const offset_x: f32 = if (is_even) width / 2.0 else 0;
+                    const offset = Game.Vector.init(
+                        @floatFromInt(x),
+                        @floatFromInt(y),
+                    ).multiply(slot_size).add(.init(offset_x, 0));
+                    const position = start.add(offset);
+                    const i = x + y * n_cols;
+
+                    if (slot_renderable.containsPoint(position, mouse_pos, 1, 0)) {
+                        const slot = &player_component.inventory.items[i];
+                        if (slot == selected_item) break :outer;
+
+                        if (canMerge(selected_item, slot)) {
+                            merge(self, selected_item, slot);
+                            if (slot.* == null) {
+                                swapItems(selected_item, slot);
+                            }
+                        } else {
+                            swapItems(selected_item, slot);
+                        }
+
+                        self.modification_state.selected_item = null;
+                        self.modification_state.selected_item_inventory = null;
+
+                        break :outer;
+                    }
+                }
+            }
+        } else {
+            const selected_item = self.modification_state.selectedItemPtr().?;
+
+            outer: for (0..n_cols) |x| {
+                for (0..n_rows) |y| {
+                    const is_even = @mod(y, 2) == 0;
+                    const offset_x: f32 = if (is_even) width / 2.0 else 0;
+                    const offset = Game.Vector.init(
+                        @floatFromInt(x),
+                        @floatFromInt(y),
+                    ).multiply(slot_size).add(.init(offset_x, 0));
+                    const position = start.add(offset);
+                    const i = x + y * n_cols;
+
+                    if (Game.C.Item.emptySlotRenderable(self).containsPoint(position, mouse_pos, 1, 0)) {
+                        const slot_item = &player_component.inventory.items[i];
+                        if (selected_item == slot_item) break;
+
+                        if (canMerge(selected_item, slot_item)) {
+                            const merge_border = self.initSprite(.init(71, 142, 19, 21));
+                            merge_border.draw(position, 1, 0);
+                        } else {
+                            const swap_border = self.initSprite(.init(75, 101, 17, 19));
+                            swap_border.draw(position, 1, 0);
+                        }
+
+                        break :outer;
+                    }
+                }
+            }
+        }
+    }
+
+    if (selected_position) |position| {
+        const selection_border = self.initSprite(.init(93, 101, 17, 19));
+        selection_border.draw(position, 1, 0);
+    }
+}
+
+fn canMerge(a: *?Game.C.Item, b: *?Game.C.Item) bool {
+    const a_ = if (a.*) |*a_| a_ else return false;
+    const b_ = if (b.*) |*b_| b_ else return false;
+    return a_.canMergeWith(b_.*);
+}
+
+fn merge(self: *Game, a: *?Game.C.Item, b: *?Game.C.Item) void {
+    const a_ = if (a.*) |*a_| a_ else return;
+    const b_ = if (b.*) |*b_| b_ else return;
+
+    switch (a_.merge(b_)) {
+        .destroy => |item| {
+            const player = self.player();
+            const player_component = player.get(Game.C.Player);
+
+            for (player_component.inventory.items) |*inv_item| {
+                const inv_item_ = if (inv_item.*) |*it| it else continue;
+                if (inv_item_ == item) {
+                    inv_item.* = null;
+                    return;
+                }
+            }
+            for (player_component.body.slots) |*inv_item| {
+                const inv_item_ = if (inv_item.*) |*it| it else continue;
+                if (inv_item_ == item) {
+                    inv_item.* = null;
+                    return;
+                }
+            }
+        },
+    }
+}
+
+fn swapItems(a: *?Game.C.Item, b: *?Game.C.Item) void {
+    const copy = a.*;
+    a.* = b.*;
+    b.* = copy;
+}
+
+fn drawDrag(self: *Game) void {
+    if (!self.modification_state.is_dragging) return;
+
+    const mouse_pos = rl.getScreenToWorld2D(rl.getMousePosition(), self.camera().*);
+    const item = self.modification_state.selectedItem().?;
+    var sprite = item.sprite(self);
+    sprite.sprite.tint = .alpha(.white, 0.5);
+
+    sprite.draw(mouse_pos, 2, 0);
+}
+
+fn drawNextLevelButton(self: *Game) void {
+    const position = self.getAbsolutePos(.init(0.5, 0.925));
+    drawButton("CONTINUE", .{}, position, .green, .white);
+    const button_rec = buttonRec("CONTINUE", .{}, position);
+    const mouse_pos = rl.getScreenToWorld2D(rl.getMousePosition(), self.camera().*);
+    if (rl.isMouseButtonPressed(.left)) {
+        if (rl.checkCollisionPointRec(mouse_pos, button_rec)) {
+            self.nextLevel();
+        }
+    }
 }
 
 fn drawEnding(self: *Game) void {
@@ -104,6 +558,14 @@ fn drawGameOver(self: *Game) void {
     ui_camera.begin();
     drawGameOverUI(self);
     ui_camera.end();
+}
+
+fn drawBorder(self: *Game) void {
+    const screen_size = self.screenSize();
+    const world_pos = self.worldPosition();
+    const world_size = self.worldSize();
+    rl.drawRectangleV(.init(0, 0), .init(world_pos.x, screen_size.y), .black);
+    rl.drawRectangleV(.init(world_pos.x + world_size.x, 0), .init(screen_size.x, screen_size.y), .black);
 }
 
 fn drawGameOverUI(self: *Game) void {
@@ -135,6 +597,16 @@ fn debugDrawUI(self: *Game) void {
     }
 }
 
+fn measureText(
+    comptime fmt: []const u8,
+    args: anytype,
+    font_size: f32,
+) f32 {
+    var buffer: [256]u8 = undefined;
+    const text = std.fmt.bufPrintZ(&buffer, fmt, args) catch unreachable;
+    return @floatFromInt(rl.measureText(text, @intFromFloat(font_size)));
+}
+
 fn drawText(
     comptime fmt: []const u8,
     args: anytype,
@@ -160,12 +632,9 @@ fn drawTextCentered(
     position: Game.Vector,
     color: Game.Color,
 ) void {
-    var buffer: [256]u8 = undefined;
-    const text = std.fmt.bufPrintZ(&buffer, fmt, args) catch unreachable;
-    const width = rl.measureText(text, @intFromFloat(font_size));
-    const zoomed_width: f32 = @floatFromInt(width);
+    const width = measureText(fmt, args, font_size);
     var p = position;
-    p.x -= zoomed_width / 2;
+    p.x -= width / 2;
     p.y -= font_size / 2;
     drawText(fmt, args, font_size, p, color);
 }

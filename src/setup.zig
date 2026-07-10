@@ -13,11 +13,11 @@ pub fn setup(self: *Game) void {
     setupSystems(self);
     // createDefaultGrid(self) catch unreachable;
 
-    setupEntities(self);
+    setupEntities(self) catch unreachable;
 }
 
-pub fn setupEntities(self: *Game) void {
-    createPlayer(self);
+pub fn setupEntities(self: *Game) !void {
+    try createPlayer(self);
 }
 
 fn initRaylib(self: *Game) void {
@@ -70,29 +70,36 @@ pub fn setupSystems(self: *Game) void {
     background.setup(self);
 }
 
-fn createPlayer(self: *Game) void {
+fn createPlayer(self: *Game) !void {
     const player = self.createEntity();
     const position = self.worldCenterBottom();
-    const spritesheet = self.spritesheet();
-    player.add(Game.C.Renderable.initSprite(spritesheet, .init(29, 74, 17, 31)));
-    const renderable = player.get(Game.C.Renderable);
-    renderable.sprite.tint = .red;
+    // player.add(Game.C.Renderable.initSprite(spritesheet, .init(29, 74, 17, 31)));
+    // const renderable = player.get(Game.C.Renderable);
+    // renderable.sprite.tint = .red;
+    // renderable.sprite.draw_layer = Game.draw_layers.player;
+    player.add(try Game.C.Player.init(self.allocator));
+    const player_component = player.get(Game.C.Player);
+    player_component.body.slots[0] = .weapon_machine_gun;
+    player_component.body.slots[1] = .weapon_machine_gun;
+    player_component.inventory.items[0] = .weapon_machine_gun;
+    player_component.inventory.items[1] = .body_mod_shield;
+    var renderable = player_component.body.body_type.sprite(self);
     renderable.sprite.draw_layer = Game.draw_layers.player;
+    player.add(renderable);
     const player_size = renderable.size(1, 0);
     player.add(Game.C.Body.init(position.subtract(player_size)));
     player.add(Game.C.Controllable.init());
-    player.add(Game.C.Player.init());
 
-    const weapon_ctx = self.createEntity();
-    weapon_ctx.add(Game.C.Body.init(.init(0, 0)));
-    weapon_ctx.add(Game.C.RelativePosition.init(player, .init(0, -8), true));
-    weapon_ctx.add(self.initSprite(.init(76, 55, 7, 14)));
-    const weapon_renderable = weapon_ctx.get(Game.C.Renderable);
-    weapon_renderable.sprite.tint = .sky_blue;
-    weapon_renderable.sprite.draw_layer = Game.draw_layers.player + 1;
+    // const weapon_ctx = self.createEntity();
+    // weapon_ctx.add(Game.C.Body.init(.init(0, 0)));
+    // weapon_ctx.add(Game.C.RelativePosition.init(player, .init(0, -8), true));
+    // weapon_ctx.add(self.initSprite(.init(76, 55, 7, 14)));
+    // const weapon_renderable = weapon_ctx.get(Game.C.Renderable);
+    // weapon_renderable.sprite.tint = .sky_blue;
+    // weapon_renderable.sprite.draw_layer = Game.draw_layers.player + 1;
 
-    const player_component = player.get(Game.C.Player);
-    player_component.weapon_ctx = weapon_ctx;
+    // const player_component = player.get(Game.C.Player);
+    // player_component.weapon_ctx = weapon_ctx;
 }
 
 fn createDefaultGrid(self: *Game) !void {

@@ -15,6 +15,8 @@ fn updateMain(self: *Game) void {
         .logo => updateLogo(self),
         .menu => updateMenu(self),
         .gameplay => updateGameplay(self),
+        .shop => updateShop(self),
+        .modification => updateModification(self),
         .ending => updateEnding(self),
         .game_over => updateGameOver(self),
     }
@@ -79,6 +81,14 @@ fn updateGameplay(self: *Game) void {
     player.update(self);
     const enemy = self.getSingleton(Game.S.Enemy);
     enemy.update(self);
+}
+
+fn updateShop(self: *Game) void {
+    _ = self;
+}
+
+fn updateModification(self: *Game) void {
+    _ = self;
 }
 
 fn updateEnding(self: *Game) void {

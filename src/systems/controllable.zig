@@ -1,4 +1,5 @@
 const Game = @import("../game.zig").Game;
+const rl = @import("raylib");
 
 pub const Controllable = struct {
     enabled: bool = true,
@@ -32,6 +33,14 @@ pub const Controllable = struct {
             }
             if (input.isDown(.move_down)) {
                 body.velocity.y += controllable.speed;
+            }
+
+            if (rl.isWindowFocused()) {
+                const mouse_screen = rl.getMousePosition();
+                const mouse_world = rl.getScreenToWorld2D(mouse_screen, game.camera().*);
+
+                body.position.x = mouse_world.x;
+                body.position.y = mouse_world.y;
             }
         }
     }

@@ -7,6 +7,7 @@ pub const EnemyWeapon = @import("components/enemy-weapon.zig").EnemyWeapon;
 pub const FadeGradient = @import("components/fade-gradient.zig").FadeGradient;
 pub const Hitbox = @import("components/hitbox.zig").Hitbox;
 pub const Invisible = @import("components/invisible.zig").Invisible;
+pub const Item = @import("components/item.zig").Item;
 pub const Player = @import("components/player.zig").Player;
 pub const PlayerProjectile = @import("components/player-projectile.zig").PlayerProjectile;
 pub const RelativePosition = @import("components/relative-position.zig").RelativePosition;

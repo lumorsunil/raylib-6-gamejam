@@ -29,6 +29,19 @@ pub const Renderable = union(enum) {
         return self.size(scale, rotation).scale(0.5);
     }
 
+    pub fn containsPoint(
+        self: Renderable,
+        position: Game.Vector,
+        point: Game.Vector,
+        scale: f32,
+        rotation: f32,
+    ) bool {
+        const size_ = self.size(scale, rotation);
+        const p = position.subtract(self.origin(scale, rotation));
+        const rec = rl.Rectangle.init(p.x, p.y, size_.x, size_.y);
+        return rl.checkCollisionPointRec(point, rec);
+    }
+
     pub fn initRectangle(rec_size: Game.Vector, color: Game.Color) @This() {
         return .{ .rectangle = .{ .rec_size = rec_size, .color = color } };
     }

@@ -141,6 +141,10 @@ const Wave = struct {
         return .{ .def = def };
     }
 
+    pub fn setup(self: *@This(), t: f64) void {
+        self.next_spawn_at = t;
+    }
+
     pub fn shouldSpawn(self: Wave, t: f64) bool {
         if (self.def.spawns.len == 0) return false;
         if (self.n_spawns_spawned >= self.def.spawns.len) return false;
@@ -175,13 +179,18 @@ const Stage = struct {
         };
     }
 
+    pub fn setup(self: *@This(), t: f64) void {
+        self.next_wave_at = t + self.interval + self.nextWave().totalDuration();
+    }
+
     pub fn shouldAdvance(self: Stage, t: f64) bool {
         return self.next_wave_at <= t;
     }
 
     pub fn advance(self: *Stage, t: f64) void {
         self.n_waves_spawned += 1;
-        self.next_wave_at = t + self.interval + self.nextWave().totalDuration();
+        if (self.isOver()) return;
+        self.setup(t);
     }
 
     pub fn isOver(self: *Stage) bool {
@@ -197,6 +206,15 @@ const Stage = struct {
 const at_the_back = -0.1;
 
 const stages = [_]Stage{
+    // stage_1,
+    very_short_stage,
+};
+
+const very_short_stage: Stage = .init(&.{
+    .init(.init(0, 0), &.{}, 0),
+}, 4);
+
+const stage_1: Stage =
     .init(&.{
         .init(.init(0, 0), &.{}, 0),
         .init(.init(0.5, at_the_back), &.{ .one(.noWeapon(0)), .one(.noWeapon(0)), .one(.noWeapon(0)) }, 2),
@@ -210,11 +228,7 @@ const stages = [_]Stage{
             .init(.init(0.3, at_the_back), null, .init(1, .double_cannon)),
             .init(.init(0.7, at_the_back), null, .init(1, .double_cannon)),
         })}, 2),
-        .init(.init(0, 0), &.{}, 0),
-        .init(.init(0, 0), &.{}, 0),
-        .init(.init(0, 0), &.{}, 0),
-    }, 4),
-};
+    }, 4);
 
 pub const Enemy = struct {
     current_stage: Stage = stages[0],
@@ -259,13 +273,23 @@ pub const Enemy = struct {
         if (self.current_stage.isOver()) {
             self.current_stage_index += 1;
             if (self.current_stage_index >= stages.len) {
-                game.ending();
-                return;
+                // game.ending();
+                // return;
+                game.shop();
+                self.current_stage_index = 0;
             }
             self.current_stage = stages[self.current_stage_index];
         }
 
         self.current_wave = self.current_stage.nextWave();
+
+        self.setup(game);
+    }
+
+    pub fn setup(self: *Enemy, game: *Game) void {
+        const t = game.elapsedTime();
+        self.current_stage.setup(t);
+        self.current_wave.setup(t);
     }
 
     fn spawnNext(self: *Enemy, game: *Game) void {

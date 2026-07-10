@@ -1,0 +1,24 @@
+# ideas
+
+- player ship will have mod slots
+- each mod slot can have a weapon or a body mod
+- player will have an inventory of weapons/mods
+- at the end of every level, a random selection of mods can be purchased with shards
+  - maybe selectio of 1 weapon and 2 mods
+  - the purchased item will be put into the player inventory
+  - after the purchase, the player may switch out items on the ship
+  - the player may also _merge_ weapons of the same type to increase it's tier level
+  - weapon mods may be merged into weapons to increase their efficiency
+- items might also be randomly added to enemies, giving more variation
+  - each item will give extra shards when killed
+- remove enemy merging
+- more enemy variation
+  - different AI (maybe mod-based?)
+    - follow player
+    - "smart" hunter (follows and shoots player, tries to avoid player attacks)
+    - basic (never changes velocity)
+    - string-pattern (a line of enemies following a path)
+  - different bodies
+    - tiny (small hexagon)
+    - small ()
+- bosses
