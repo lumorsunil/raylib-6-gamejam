@@ -2,81 +2,76 @@ const std = @import("std");
 const Game = @import("../game.zig").Game;
 
 const EnemyDef = struct {
-    tier: usize,
-    weapon: ?Game.C.EnemyWeapon.WeaponType = null,
+    // tier: usize,
+    body: Game.C.Enemy.Body,
+    ai_type: Game.C.Enemy.AI.AIType,
+    // weapon: ?Game.C.EnemyWeapon.WeaponType = null,
 
-    pub const n_tiers = 4;
+    // pub const n_tiers = 4;
 
-    pub fn init(tier: usize, weapon: ?Game.C.EnemyWeapon.WeaponType) @This() {
+    pub fn init(body: Game.C.Enemy.Body, ai_type: Game.C.Enemy.AI.AIType) @This() {
+        return .{ .body = body, .ai_type = ai_type };
+    }
+
+    pub fn initRandom(game: *Game, value: usize) !@This() {
+        const enemy = try Game.C.Enemy.initRandom(game, value);
+        return .init(enemy.body, enemy.ai.ai_type);
+    }
+
+    pub fn clone(self: @This(), allocator: std.mem.Allocator) !@This() {
         return .{
-            .tier = tier,
-            .weapon = weapon,
+            .body = try self.body.clone(allocator),
+            .ai_type = self.ai_type,
         };
     }
 
-    pub fn noWeapon(tier: usize) @This() {
-        return .init(tier, null);
-    }
-
-    pub fn merge(prev_tier: usize) @This() {
-        const tier = prev_tier + 1;
-        return .init(tier, mergeWeapon(tier));
-    }
-
-    pub fn tint(self: @This()) Game.Color {
-        return switch (self.tier) {
-            0 => .green,
-            1 => .blue,
-            2 => .red,
-            3 => .yellow,
-            else => .white,
-        };
-    }
-
-    pub fn health(self: @This()) usize {
-        return switch (self.tier) {
-            0 => 4,
-            1 => 10,
-            2 => 20,
-            3 => 40,
-            else => 1,
-        };
-    }
-
-    pub fn shardsDropped(self: @This()) usize {
-        return switch (self.tier) {
-            0 => 4,
-            1 => 10,
-            2 => 20,
-            3 => 40,
-            else => 1,
+    pub fn health(self: @This()) f32 {
+        return switch (self.body.body_type) {
+            .small => 4,
+            .medium => 10,
+            .large => 20,
         };
     }
 
     pub fn velocity(self: @This()) Game.Vector {
-        return switch (self.tier) {
-            0 => .init(0, 100),
-            1 => .init(0, 50),
-            2 => .init(0, 25),
-            3 => .init(0, 15),
-            else => .init(0, 0),
+        return switch (self.body.body_type) {
+            .small => .init(0, 75),
+            .medium => .init(0, 50),
+            .large => .init(0, 25),
         };
     }
 
-    pub fn mergeWeapon(tier: usize) ?Game.C.EnemyWeapon.WeaponType {
-        return switch (tier) {
-            0 => null,
-            1 => .double_cannon,
-            2 => null,
-            3 => null,
-            else => null,
-        };
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        try writer.print("Value: {}\n", .{Game.C.Enemy.init(self.body, self.ai_type, 0).shardsDropped()});
+        try writer.print("Body Type: {t}\n", .{self.body.body_type});
+        try writer.print("AI Type: {t}\n", .{self.ai_type});
+        try writer.print("Items: \n", .{});
+
+        for (self.body.slots, 0..) |slot, i| {
+            if (slot) |item| {
+                try writer.print("Item {}:\n", .{i});
+                try writer.print("Item Type: {t}\n", .{item.item_type});
+                try writer.print("Item Tier: {}\n", .{item.tier});
+                try writer.print("Item Value: {}\n\n", .{item.shardsDropped()});
+            }
+        }
     }
 };
 
 const SpawnDef = union(enum) {
     enemy: EnemyDef,
     group: Group,
+
+    pub fn initRandom(game: *Game, value: usize) !@This() {
+        if (game.random().float(f32) > 0.2) {
+            return .{ .enemy = try .initRandom(game, value) };
+        } else {
+            return .{ .group = try .initRandom(game, value) };
+        }
+    }
 
     pub fn one(enemy: EnemyDef) @This() {
         return .{ .enemy = enemy };
@@ -91,6 +86,23 @@ const SpawnDef = union(enum) {
 
         pub fn init(enemies: []const GroupEnemy) @This() {
             return .{ .enemies = enemies };
+        }
+
+        pub fn initRandom(game: *Game, value: usize) !@This() {
+            const n_enemies = game.random().intRangeAtMost(usize, 2, 4);
+            const enemies = try game.allocator.alloc(GroupEnemy, n_enemies);
+            const x_step: f32 = 1.0 / @as(f32, @floatFromInt(n_enemies + 1));
+
+            const same_enemy = if (game.random().boolean()) null else try EnemyDef.initRandom(game, value);
+
+            for (enemies, 0..) |*enemy, i| {
+                const fi: f32 = @floatFromInt(i);
+                const position = Game.Vector.init(x_step * (fi + 1), 0);
+                const enemy_def: EnemyDef = same_enemy orelse try .initRandom(game, value);
+                enemy.* = .init(position, null, enemy_def.clone(game.allocator) catch unreachable);
+            }
+
+            return .init(enemies);
         }
 
         pub const GroupEnemy = struct {
@@ -109,8 +121,36 @@ const SpawnDef = union(enum) {
                     .def = def,
                 };
             }
+
+            pub fn format(
+                self: @This(),
+                writer: *std.Io.Writer,
+            ) std.Io.Writer.Error!void {
+                try writer.print("Group Position: {},{}\n", .{ self.position.x, self.position.y });
+                try writer.print("Group Enemy:\n{f}", .{self.def});
+            }
         };
+
+        pub fn format(
+            self: @This(),
+            writer: *std.Io.Writer,
+        ) std.Io.Writer.Error!void {
+            try writer.print("# Enemies: {}\n", .{self.enemies.len});
+            for (self.enemies, 0..) |enemy, i| {
+                try writer.print("Enemy {}:\n{f}\n\n", .{ i, enemy });
+            }
+        }
     };
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .enemy => |enemy| try writer.print("One {f}", .{enemy}),
+            .group => |group| try writer.print("Group:\n{f}", .{group}),
+        }
+    }
 };
 
 const WaveDef = struct {
@@ -126,9 +166,42 @@ const WaveDef = struct {
         return .{ .position = position, .spawns = spawns, .interval = interval };
     }
 
+    pub fn initRandom(game: *Game, value: usize) !@This() {
+        const lanes = [_]Game.Vector{
+            .init(0.25, 0),
+            .init(0.5, 0),
+            .init(0.75, 0),
+        };
+        const lane_i = game.random().uintLessThan(usize, lanes.len);
+        const lane = lanes[lane_i];
+
+        const interval = game.random().float(f32) * 1.8 + 0.2;
+
+        const n_spawns = game.random().intRangeAtMost(usize, 3, 10);
+        const spawns = try game.allocator.alloc(SpawnDef, n_spawns);
+
+        for (spawns) |*spawn| spawn.* = try .initRandom(game, value);
+
+        return .init(lane, spawns, interval);
+    }
+
     pub fn totalDuration(self: WaveDef) f64 {
         const len: f64 = @floatFromInt(self.spawns.len);
         return len * self.interval;
+    }
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        try writer.print("Position: {},{}\nInterval: {}\nSpawns: {}\n", .{
+            self.position.x, self.position.y,
+            self.interval,   self.spawns.len,
+        });
+
+        for (self.spawns, 0..) |spawn, i| {
+            try writer.print("Spawn {}:\n{f}\n\n", .{ i, spawn });
+        }
     }
 };
 
@@ -143,6 +216,7 @@ const Wave = struct {
 
     pub fn setup(self: *@This(), t: f64) void {
         self.next_spawn_at = t;
+        self.n_spawns_spawned = 0;
     }
 
     pub fn shouldSpawn(self: Wave, t: f64) bool {
@@ -170,13 +244,31 @@ const Stage = struct {
     n_waves_spawned: usize = 0,
     next_wave_at: f64 = 0,
     interval: f64,
+    starting_value: usize,
 
-    pub fn init(waves: []const WaveDef, interval: f64) @This() {
+    pub fn init(waves: []const WaveDef, interval: f64, starting_value: usize) @This() {
         return .{
             .waves = waves,
             .interval = interval,
             .next_wave_at = waves[0].totalDuration() + interval,
+            .starting_value = starting_value,
         };
+    }
+
+    pub fn initRandom(game: *Game, starting_value: usize) !@This() {
+        std.log.debug("randomizing stage with value {}", .{starting_value});
+        const n_waves = 1;
+
+        const waves = try game.allocator.alloc(WaveDef, n_waves);
+        for (waves, 0..) |*wave, i| {
+            const easy_wave = starting_value;
+            const moderate_wave: usize = @intFromFloat(@as(f32, @floatFromInt(starting_value)) * 1.5);
+            const difficult_wave = starting_value * 2;
+            const wave_difficulty = if (i == 5 or i == 9) difficult_wave else if (i < 5) easy_wave else moderate_wave;
+            wave.* = try .initRandom(game, wave_difficulty);
+        }
+
+        return .init(waves, 4, starting_value);
     }
 
     pub fn setup(self: *@This(), t: f64) void {
@@ -200,6 +292,16 @@ const Stage = struct {
     pub fn nextWave(self: Stage) Wave {
         return .init(self.waves[self.n_waves_spawned]);
     }
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        try writer.print("Stage\n{} Waves\n{} Starting Value\n\n", .{ self.waves.len, self.starting_value });
+        for (self.waves, 0..) |wave, i| {
+            try writer.print("Wave {}: \n{f}\n\n", .{ i + 1, wave });
+        }
+    }
 };
 
 // const at_the_back = -60;
@@ -213,6 +315,13 @@ const stages = [_]Stage{
 const very_short_stage: Stage = .init(&.{
     .init(.init(0, 0), &.{}, 0),
 }, 4);
+
+fn createBody(
+    allocator: std.mem.Allocator,
+    body_type: Game.C.Enemy.Body.BodyType,
+) Game.C.Enemy.Body {
+    return .init(allocator, body_type);
+}
 
 const stage_1: Stage =
     .init(&.{
@@ -231,27 +340,41 @@ const stage_1: Stage =
     }, 4);
 
 pub const Enemy = struct {
-    current_stage: Stage = stages[0],
+    // current_stage: Stage = stages[0],
+    // current_stage_index: usize = 0,
+    // current_wave: Wave = stages[0].nextWave(),
+    current_stage: Stage = undefined,
     current_stage_index: usize = 0,
-    current_wave: Wave = stages[0].nextWave(),
+    current_wave: Wave = undefined,
+    current_value: usize = initial_value,
 
+    pub const initial_value = 5;
     pub const merge_distance_threshold: f32 = 3;
+    pub const max_stages = 3;
 
     pub fn init() @This() {
         return .{};
     }
 
-    pub fn reset(self: *Enemy) void {
-        self.current_stage = stages[0];
+    pub fn nextStage(self: *@This(), game: *Game) !void {
+        self.current_stage = try .initRandom(game, self.current_value);
+        std.log.debug("{f}", .{self.current_stage});
+        self.current_wave = self.current_stage.nextWave();
+        self.current_value += 10;
+        self.current_stage_index += 1;
+    }
+
+    pub fn reset(self: *Enemy, game: *Game) !void {
+        try self.nextStage(game);
         self.current_stage_index = 0;
-        self.current_wave = stages[0].nextWave();
+        self.current_value = initial_value;
     }
 
     pub fn update(self: *Enemy, game: *Game) void {
         self.updateStage(game);
         self.updateHits(game);
-        self.updateMerges(game);
         self.updateWeapons(game);
+        self.updateRemoveOutOfBounds(game);
     }
 
     fn updateStage(self: *Enemy, game: *Game) void {
@@ -271,18 +394,16 @@ pub const Enemy = struct {
         self.current_stage.advance(t);
 
         if (self.current_stage.isOver()) {
-            self.current_stage_index += 1;
-            if (self.current_stage_index >= stages.len) {
-                // game.ending();
-                // return;
+            if (self.current_stage_index >= max_stages) {
+                game.ending();
+                return;
+            } else {
                 game.shop();
-                self.current_stage_index = 0;
+                return;
             }
-            self.current_stage = stages[self.current_stage_index];
         }
 
         self.current_wave = self.current_stage.nextWave();
-
         self.setup(game);
     }
 
@@ -312,28 +433,40 @@ pub const Enemy = struct {
     ) void {
         const ctx = game.createEntity();
         var position = if (position_override) |p| p else brk: {
-            var p = self.current_wave.def.position;
-            const wonky_offset = 0.2;
-            if (self.current_wave.n_spawns_spawned % 2 == 0) {
-                p.x += wonky_offset;
-            } else {
-                p.x -= wonky_offset;
-            }
+            const p = self.current_wave.def.position;
+            // var p = self.current_wave.def.position;
+            // const wonky_offset = 0.2;
+            // if (self.current_wave.n_spawns_spawned % 2 == 0) {
+            //     p.x += wonky_offset;
+            // } else {
+            //     p.x -= wonky_offset;
+            // }
             break :brk p;
         };
-        position = position.multiply(game.worldSize()).add(game.worldPosition());
+        position = game.getAbsolutePos(position);
         ctx.add(Game.C.Body.init(position));
         const body = ctx.get(Game.C.Body);
         body.velocity = if (velocity_override) |v| v else enemy_def.velocity();
-        ctx.add(game.initSprite(.init(127, 5, 31, 17)));
-        const renderable = ctx.get(Game.C.Renderable);
-        renderable.sprite.tint = enemy_def.tint();
+        body.rotation = std.math.pi;
+        ctx.add(Game.C.Enemy.init(enemy_def.body, enemy_def.ai_type, enemy_def.health()));
+        const enemy = ctx.get(Game.C.Enemy);
+        var renderable = enemy.body.body_type.sprite(game);
         renderable.sprite.draw_layer = Game.draw_layers.enemy;
-        ctx.add(Game.C.Enemy.init(enemy_def.tier, enemy_def.health()));
-        if (enemy_def.weapon) |weapon_type| {
-            ctx.add(Game.C.EnemyWeapon.init(weapon_type));
-        }
+        ctx.add(renderable);
+        // if (enemy_def.weapon) |weapon_type| {
+        //     ctx.add(Game.C.EnemyWeapon.init(weapon_type));
+        // }
         ctx.add(Game.C.DamageOnTouch{ .destroy_source = false });
+        var weapon_it = enemy.weaponIterator();
+        var weapon_rof_debuff = Game.C.Item.init(.initWeaponMod(.init(.initRateOfFire())));
+        weapon_rof_debuff.item_type.weapon_mod.weapon_mod_type.rate_of_fire.rate_of_fire_factor = -0.5;
+        var weapon_ps_debuff = Game.C.Item.init(.initWeaponMod(.init(.initProjectileSpeed())));
+        weapon_ps_debuff.item_type.weapon_mod.weapon_mod_type.projectile_speed.projectile_speed_factor = -0.8;
+
+        while (weapon_it.next()) |entry| {
+            entry.weapon.weapon_mods.append(game.allocator, weapon_rof_debuff) catch unreachable;
+            entry.weapon.weapon_mods.append(game.allocator, weapon_ps_debuff) catch unreachable;
+        }
     }
 
     fn spawnGroup(self: *Enemy, game: *Game, group: SpawnDef.Group) void {
@@ -367,11 +500,13 @@ pub const Enemy = struct {
     ) void {
         projectile.destroy();
         const enemy_component = enemy.get(Game.C.Enemy);
-        enemy_component.health -|= 1;
-        if (enemy_component.health == 0) {
+        enemy_component.health -= 1;
+        game.playSound(.enemy_hit);
+        if (enemy_component.health <= 0) {
             const enemy_body = enemy.getConst(Game.C.Body);
             spawnExplosion(game, enemy_body.position);
             spawnShards(game, enemy_component.*, enemy_body.position);
+            game.playSound(.enemy_explosion);
             return enemy.destroy();
         }
         enemy_component.hit_fade_ends_at = t + Game.C.Enemy.hit_fade_duration;
@@ -448,8 +583,7 @@ pub const Enemy = struct {
     }
 
     fn spawnShards(game: *Game, enemy: Game.C.Enemy, position: Game.Vector) void {
-        const enemy_def = EnemyDef.init(enemy.tier, null);
-        var n_shards = enemy_def.shardsDropped();
+        var n_shards = enemy.shardsDropped();
 
         const large_value = Game.C.Shard.Type.large.value();
         const medium_value = Game.C.Shard.Type.medium.value();
@@ -497,67 +631,53 @@ pub const Enemy = struct {
         ctx.add(shard.renderable(game));
     }
 
-    fn updateMerges(self: *Enemy, game: *Game) void {
+    fn updateWeapons(_: *Enemy, game: *Game) void {
         var it = game.entityIterator(.{Game.C.Enemy}, .{});
 
-        outer: while (it.next()) |ctx| {
-            const enemy = ctx.getConst(Game.C.Enemy);
-            if (enemy.tier == EnemyDef.n_tiers - 1) continue;
-            if (enemy.is_merging) continue;
-
-            var other_it = game.entityIterator(.{Game.C.Enemy}, .{});
-            const hitbox = game.hitbox(ctx);
-
-            while (other_it.next()) |other_ctx| {
-                if (ctx.equals(other_ctx)) continue;
-
-                const other_enemy = other_ctx.getConst(Game.C.Enemy);
-                if (other_enemy.tier != enemy.tier) continue;
-                if (other_enemy.is_merging) continue;
-
-                const other_hitbox = game.hitbox(other_ctx);
-
-                const d = hitbox.distanceTo(other_hitbox);
-
-                if (d <= merge_distance_threshold) {
-                    self.merge(ctx, other_ctx);
-                    continue :outer;
-                }
-            }
-        }
-    }
-
-    fn merge(self: *Enemy, a: Game.EntityContext, b: Game.EntityContext) void {
-        const enemy_a = a.get(Game.C.Enemy);
-        const enemy_b = b.get(Game.C.Enemy);
-
-        enemy_a.is_merging = true;
-        enemy_b.is_merging = true;
-
-        const body_a = a.getConst(Game.C.Body);
-        const body_b = b.getConst(Game.C.Body);
-
-        const world_pos = a.game.worldPosition();
-        const world_size = a.game.worldSize();
-        const position = body_a.position.lerp(body_b.position, 0.5).subtract(world_pos).divide(world_size);
-        const enemy_def: EnemyDef = .merge(enemy_a.tier);
-
-        a.destroy();
-        b.destroy();
-
-        self.spawnByEnemyDef(a.game, enemy_def, position, null);
-    }
-
-    fn updateWeapons(_: *Enemy, game: *Game) void {
-        var it = game.entityIterator(.{ Game.C.Enemy, Game.C.EnemyWeapon }, .{});
-
         while (it.next()) |ctx| {
-            const weapon = ctx.get(Game.C.EnemyWeapon);
+            const enemy = ctx.get(Game.C.Enemy);
 
-            if (weapon.next_shot_at < game.elapsedTime()) {
-                shootWeapon(game, ctx, weapon);
+            var weapon_it = enemy.weaponIterator();
+            while (weapon_it.next()) |entry| {
+                updateWeapon(game, entry.item, entry.slot_index, ctx, enemy);
             }
         }
+
+        // var it = game.entityIterator(.{ Game.C.Enemy, Game.C.EnemyWeapon }, .{});
+        //
+        // while (it.next()) |ctx| {
+        //     const weapon = ctx.get(Game.C.EnemyWeapon);
+        //
+        //     if (weapon.next_shot_at < game.elapsedTime()) {
+        //         shootWeapon(game, ctx, weapon);
+        //     }
+        // }
+    }
+
+    fn updateWeapon(
+        game: *Game,
+        weapon: *Game.C.Item,
+        slot_index: usize,
+        enemy: Game.EntityContext,
+        enemy_component: *Game.C.Enemy,
+    ) void {
+        weapon.item_type.weapon.update();
+
+        if (weapon.item_type.weapon.next_shoot_at <= game.elapsedTime()) {
+            const body = enemy.getConst(Game.C.Body);
+            const offset = enemy_component.body.offset(game, slot_index);
+            const position = body.position.add(offset);
+            weapon.item_type.weapon.shoot(game, weapon, position, enemy, onSpawnProjectile);
+        }
+    }
+
+    fn onSpawnProjectile(enemy_ctx: Game.EntityContext, ctx: Game.EntityContext) void {
+        ctx.add(Game.C.DamageOnTouch{});
+        const body = ctx.get(Game.C.Body);
+        body.velocity.y *= -1;
+        const enemy_body = enemy_ctx.get(Game.C.Body);
+        body.velocity = body.velocity.add(enemy_body.velocity);
+        body.rotation = std.math.pi;
     }
 
     fn shootWeapon(game: *Game, ctx: Game.EntityContext, weapon: *Game.C.EnemyWeapon) void {
@@ -599,5 +719,23 @@ pub const Enemy = struct {
         const sprite = proj_ctx.get(Game.C.Renderable);
         sprite.sprite.tint = enemy_def.tint();
         proj_ctx.add(Game.C.DamageOnTouch{});
+    }
+
+    fn updateRemoveOutOfBounds(_: *Enemy, game: *Game) void {
+        var it = game.entityIterator(.{ Game.C.Enemy, Game.C.Body }, .{});
+
+        while (it.next()) |ctx| {
+            if (game.isOutOfBounds(ctx, .allow_top)) {
+                ctx.destroy();
+            }
+        }
+
+        var proj_it = game.entityIterator(.{ Game.C.DamageOnTouch, Game.C.Body }, .{});
+
+        while (proj_it.next()) |ctx| {
+            if (game.isOutOfBounds(ctx, .allow_top)) {
+                ctx.destroy();
+            }
+        }
     }
 };

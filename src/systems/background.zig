@@ -94,6 +94,7 @@ pub const Background = struct {
         const body = ctx.get(Game.C.Body);
         body.velocity.y = game.random().float(f32) * velocity_y_variance + velocity_y_min;
         ctx.add(randomSprite(game));
+        ctx.add(Game.C.Background.init());
 
         return ctx;
     }

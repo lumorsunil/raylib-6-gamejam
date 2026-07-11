@@ -2,6 +2,8 @@ const std = @import("std");
 const ecs = @import("ecs");
 const rl = @import("raylib");
 const emscripten = std.os.emscripten;
+const Sound = @import("sound.zig").Sound;
+const Sounds = @import("sound.zig").Sounds;
 
 const Mode = enum { dev, prod };
 
@@ -12,7 +14,7 @@ pub const Game = struct {
     allocator: std.mem.Allocator,
     reg: ecs.Registry,
     random_io: std.Random.IoSource,
-    screen_state: ScreenState = if (mode == .prod) .logo else .modification,
+    screen_state: ScreenState = if (mode == .prod) .logo else .menu,
     logo: Logo = .init(0),
     menu: Menu = .init(),
     settings: Settings = .init(),
@@ -60,6 +62,7 @@ pub const Game = struct {
         self.physics().deinit(self.allocator);
         self.shop_state.deinit(self.allocator);
         self.reg.deinit();
+        rl.closeAudioDevice();
         rl.closeWindow();
     }
 
@@ -358,7 +361,7 @@ pub const Game = struct {
         @import("setup.zig").setupEntities(self) catch unreachable;
         @import("setup.zig").setupSystems(self);
         const enemy_system = self.getSingleton(Game.S.Enemy);
-        enemy_system.reset();
+        enemy_system.reset(self) catch unreachable;
     }
 
     fn destroyAllEntities(self: *Game) void {
@@ -378,6 +381,7 @@ pub const Game = struct {
     pub const OutOfBoundsRules = enum {
         all_directions,
         allow_bottom,
+        allow_top,
     };
 
     pub fn isOutOfBounds(self: *Game, ctx: EntityContext, rules: OutOfBoundsRules) bool {
@@ -386,7 +390,7 @@ pub const Game = struct {
         const world_size = self.worldSize();
 
         if (hitbox_.right() - world_pos.x <= 0) return true;
-        if (hitbox_.bottom() - world_pos.y <= 0) return true;
+        if (rules != .allow_top and hitbox_.bottom() - world_pos.y <= 0) return true;
         if (hitbox_.left() - world_pos.x - world_size.x >= 0) return true;
         if (rules != .allow_bottom and hitbox_.top() - world_pos.y - world_size.y >= 0) return true;
 
@@ -413,9 +417,31 @@ pub const Game = struct {
         self.modification_state.setup(self);
     }
 
-    pub fn nextLevel(self: *Game) void {
+    pub fn startGame(self: *Game) void {
+        self.screen_state = .gameplay;
+        self.nextStage();
+    }
+
+    pub fn nextStage(self: *Game) void {
         self.screen_state = .gameplay;
         const enemy_system = self.getSingleton(Game.S.Enemy);
+        enemy_system.nextStage(self) catch unreachable;
         enemy_system.setup(self);
+
+        var it = self.entityIterator(.{Game.C.Body}, .{ Game.C.Player, Game.C.Background });
+        while (it.next()) |ctx| ctx.destroy();
+    }
+
+    pub fn getSound(self: *Game, comptime sound: Sound) rl.Sound {
+        const sounds = self.getSingleton(Sounds);
+        return @field(sounds, @tagName(sound));
+    }
+
+    pub fn playSound(self: *Game, comptime sound: Sound) void {
+        rl.playSound(self.getSound(sound));
+    }
+
+    pub fn isSoundPlaying(self: *Game, comptime sound: Sound) bool {
+        return rl.isSoundPlaying(self.getSound(sound));
     }
 };

@@ -9,9 +9,11 @@ pub const Player = struct {
     // extra_weapon: ?PlayerWeapon = null,
     // weapon_ctx: Game.EntityContext = undefined,
     destroyed_at: ?f64 = null,
+    invincibility_ends_at: f64 = 0,
     inventory: Inventory,
 
     pub const respawn_time = 3;
+    pub const grace_period_duration = 1;
 
     pub fn init(allocator: std.mem.Allocator) !@This() {
         return .{
@@ -22,6 +24,24 @@ pub const Player = struct {
 
     pub fn hit(self: *Player, game: *Game, _: usize) void {
         if (self.destroyed_at) |_| return;
+
+        if (self.invincibility_ends_at > game.elapsedTime()) {
+            return;
+        }
+
+        var shield_it = self.shieldIterator();
+
+        while (shield_it.next()) |entry| {
+            if (entry.shield.n_charges > 0) {
+                entry.shield.n_charges -= 1;
+                entry.shield.regenerate_charge_at = game.elapsedTime() + entry.shield.regenerate_charge_duration;
+                self.invincibility_ends_at = game.elapsedTime() + grace_period_duration;
+                game.playSound(.shield_hit);
+                return;
+            }
+        }
+
+        game.playSound(.player_explosion);
         self.destroyed_at = game.elapsedTime();
         self.lives -= 1;
     }
@@ -61,6 +81,46 @@ pub const Player = struct {
         return .init(self);
     }
 
+    pub const ShieldIterator = struct {
+        player: *Player,
+        index: ?usize = 0,
+
+        pub fn init(player: *Player) @This() {
+            return .{ .player = player };
+        }
+
+        pub fn next(self: *ShieldIterator) ?ShieldIteratorEntry {
+            const index = if (self.index) |*index| index else return null;
+
+            const slots = self.player.body.slots;
+            for (index.*..slots.len) |i| {
+                if (slots[i]) |*item| {
+                    if (item.item_type == .body_mod and item.item_type.body_mod.body_mod_type == .shield) {
+                        index.* += 1;
+                        return .{
+                            .slot_index = i,
+                            .item = item,
+                            .shield = &item.item_type.body_mod.body_mod_type.shield,
+                        };
+                    }
+                }
+            }
+
+            self.index = null;
+            return null;
+        }
+
+        pub const ShieldIteratorEntry = struct {
+            slot_index: usize,
+            item: *Game.C.Item,
+            shield: *Game.C.Item.BodyModShield,
+        };
+    };
+
+    pub fn shieldIterator(self: *Player) ShieldIterator {
+        return .init(self);
+    }
+
     pub const PlayerBody = struct {
         slots: []?Game.C.Item,
         body_type: BodyType,
@@ -74,9 +134,14 @@ pub const Player = struct {
             };
         }
 
-        pub fn offset(self: @This(), game: *Game, slot_index: usize) Game.Vector {
+        pub fn gameplayOffset(self: @This(), game: *Game, slot_index: usize) Game.Vector {
             const sprite = self.body_type.sprite(game);
-            return self.body_type.offset(slot_index).multiply(sprite.size(1, 0)).subtract(sprite.origin(1, 0));
+            return self.body_type.gameplayOffset(slot_index).multiply(sprite.size(1, 0)).subtract(sprite.origin(1, 0));
+        }
+
+        pub fn equipOffset(self: @This(), game: *Game, slot_index: usize) Game.Vector {
+            const sprite = self.body_type.sprite(game);
+            return self.body_type.equipOffset(slot_index).multiply(sprite.size(1, 0)).subtract(sprite.origin(1, 0));
         }
 
         pub const BodyType = enum {
@@ -104,7 +169,23 @@ pub const Player = struct {
                 };
             }
 
-            pub fn offset(self: BodyType, slot_index: usize) Game.Vector {
+            pub fn gameplayOffset(self: BodyType, slot_index: usize) Game.Vector {
+                return switch (self) {
+                    .two => switch (slot_index) {
+                        0 => .init(0.1, 0.63),
+                        1 => .init(0.9, 0.63),
+                        else => unreachable,
+                    },
+                    .three => switch (slot_index) {
+                        0 => .init(0.3, 0.5),
+                        1 => .init(0.7, 0.5),
+                        2 => .init(0.5, 0.3),
+                        else => unreachable,
+                    },
+                };
+            }
+
+            pub fn equipOffset(self: BodyType, slot_index: usize) Game.Vector {
                 return switch (self) {
                     .two => switch (slot_index) {
                         0 => .init(-0.02, 0.63),
@@ -120,123 +201,6 @@ pub const Player = struct {
                 };
             }
         };
-    };
-
-    pub const PlayerWeapon = struct {
-        item: Game.C.Item,
-        // weapon_type: Type,
-        // level: usize = 0,
-        next_shoot_at: f64 = 0,
-        shoot_cooldown: f64 = 0.3,
-
-        // pub const Type = enum {
-        //     machine_gun,
-        //
-        //     pub fn cooldown(self: Type, level: usize) f64 {
-        //         return switch (self) {
-        //             .machine_gun => switch (level) {
-        //                 0 => 0.1,
-        //                 1 => 0.1,
-        //                 2 => 0.2,
-        //                 else => 0.2,
-        //             },
-        //         };
-        //     }
-        //
-        //     pub fn levelByShards(self: Type, shards: usize) usize {
-        //         return switch (self) {
-        //             .machine_gun => {
-        //                 if (shards >= 20) return 2;
-        //                 if (shards >= 10) return 1;
-        //                 return 0;
-        //             },
-        //         };
-        //     }
-        //
-        //     pub fn weaponSprite(self: Type, level: usize, game: *Game) Game.C.Renderable {
-        //         return switch (self) {
-        //             .machine_gun => switch (level) {
-        //                 0 => game.initSprite(.init(76, 55, 7, 14)),
-        //                 1 => game.initSprite(.init(59, 55, 13, 14)),
-        //                 2 => game.initSprite(.init(43, 55, 13, 14)),
-        //                 else => game.initSprite(.init(76, 55, 7, 14)),
-        //             },
-        //         };
-        //     }
-        //
-        //     pub fn shoot(self: Type, level: usize, game: *Game, position: Game.Vector) void {
-        //         switch (self) {
-        //             .machine_gun => switch (level) {
-        //                 0 => machineGunShootOne(game, position),
-        //                 1 => machineGunShootTwo(game, position),
-        //                 2 => machineGunShootTwo(game, position),
-        //                 else => {},
-        //             },
-        //         }
-        //     }
-        // };
-
-        // fn machineGunSprite(game: *Game) Game.C.Renderable {
-        //     var sprite = game.initSprite(.init(57, 39, 3, 8));
-        //     sprite.sprite.tint = .sky_blue;
-        //     return sprite;
-        // }
-
-        // fn machineGunShootOne(game: *Game, position: Game.Vector) void {
-        //     const sprite = machineGunSprite(game);
-        //     _ = spawnProjectile(game, position, .init(0, -500), sprite);
-        // }
-
-        // fn machineGunShootTwo(game: *Game, position: Game.Vector) void {
-        //     const sprite = machineGunSprite(game);
-        //
-        //     var cursor = position;
-        //     const space_between = sprite.size(1, 0).x + 8;
-        //     cursor.x -= space_between / 2.0;
-        //     _ = spawnProjectile(game, cursor, .init(0, -500), sprite);
-        //
-        //     cursor.x += space_between;
-        //     _ = spawnProjectile(game, cursor, .init(0, -500), sprite);
-        // }
-
-        // pub fn init(weapon_type: Type) @This() {
-        //     return .{ .weapon_type = weapon_type };
-        // }
-
-        pub fn init(item: Game.C.Item) @This() {
-            return .{ .item = item };
-        }
-
-        fn spawnProjectile(
-            game: *Game,
-            position: Game.Vector,
-            velocity: Game.Vector,
-            sprite: Game.C.Renderable,
-        ) Game.EntityContext {
-            const ctx = game.createEntity();
-            ctx.add(Game.C.Body.init(position));
-            const body = ctx.get(Game.C.Body);
-            body.velocity = velocity;
-            ctx.add(sprite);
-            ctx.add(Game.C.PlayerProjectile.init(1));
-
-            return ctx;
-        }
-
-        pub fn shoot(self: *@This(), game: *Game, position: Game.Vector) void {
-            self.weapon_type.shoot(self.level, game, position);
-            self.next_shoot_at = game.elapsedTime() + self.shoot_cooldown;
-        }
-
-        pub fn levelByShards(self: @This(), shards: usize) usize {
-            return self.weapon_type.levelByShards(shards);
-        }
-
-        pub fn weaponSprite(self: @This(), game: *Game) Game.C.Renderable {
-            var sprite = self.weapon_type.weaponSprite(self.level, game);
-            sprite.sprite.draw_layer = Game.draw_layers.player + 1;
-            return sprite;
-        }
     };
 
     pub const Inventory = struct {

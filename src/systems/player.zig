@@ -79,10 +79,15 @@ pub const Player = struct {
 
         if (weapon.item_type.weapon.next_shoot_at <= game.elapsedTime()) {
             const body = player.getConst(Game.C.Body);
-            const offset = player_component.body.offset(game, slot_index);
+            const offset = player_component.body.gameplayOffset(game, slot_index);
             const position = body.position.add(offset);
-            weapon.item_type.weapon.shoot(game, weapon, position);
+            weapon.item_type.weapon.shoot(game, weapon, position, player, onSpawnProjectile);
         }
+    }
+
+    fn onSpawnProjectile(_: Game.EntityContext, ctx: Game.EntityContext) void {
+        // TODO: change damage to be based on the item
+        ctx.add(Game.C.PlayerProjectile.init(1));
     }
 
     // fn updateWeapon(
@@ -216,6 +221,7 @@ pub const Player = struct {
 
             if (distance <= pickup_distance) {
                 ctx.destroy();
+                game.playSound(.pickup_shard);
                 player_component.shards += shard.value();
                 continue;
             }

@@ -1,0 +1,118 @@
+# todo
+
+## done
+
+- [x] weapons
+  - [x] machine gun
+    - [x] graphics
+      - [x] icon
+      - [x] projectiles
+    - [x] data
+    - [x] functionality
+- [x] weapon mods
+  - [x] damage
+    - [x] graphics
+      - [x] icon
+    - [x] data
+    - [x] functionality
+  - [x] rate of fire
+    - [x] graphics
+      - [x] icon
+    - [x] data
+    - [x] functionality
+  - [x] projectile speed
+    - [x] graphics
+      - [x] icon
+    - [x] data
+    - [x] functionality
+- [x] body mods
+  - [-] shield
+    - [-] graphics
+      - [x] icon
+      - [-] shield
+      - [ ] hit
+      - [ ] depletion
+      - [ ] recharge
+    - [x] data
+    - [x] functionality
+
+## mvp
+
+- [ ] enemies
+  - [x] randomized enemies
+    - [x] point system that
+      - [x] determines what mods and AI etc to add to the enemy
+      - [x] as level increases, so does the max points for enemies
+      - [ ] points should also determine size of waves
+    - [x] randomized items
+    - [x] debuff weapon mod merged with every weapon of enemies (rate of fire -~50%)
+    - [x] different body types with different number of slots
+    - [ ] different AI types
+      - [x] straight line
+      - [ ] simple pattern
+      - [ ] follow player
+  - [ ] balance waves
+- [ ] bugs/small fixes
+  - [x] remove entities below bottom of the screen (except for player)
+  - [x] when advancing to the next level, remove all enemies and enemy projectiles
+  - [ ] shop needs to properly randomize available items
+  - [ ] enemy projectiles are too fast (maybe something wrong with the projectile speed mod)
+- [ ] ending screen
+  - [ ] after 3 stages you win
+- [ ] gameplay
+  - [ ] touch support
+- [ ] menu
+  - [ ] ui design
+  - [ ] mouse/touch support
+- [ ] HUD
+  - [ ] coin counter
+  - [x] stage counter
+- [ ] music
+  - [ ] stage music
+  - [ ] shop/inventory music
+- [x] sound effects
+  - [x] unique for each weapon
+  - [x] shield recharge
+  - [x] shield hit
+  - [x] ship destroyed
+  - [x] enemy ship destroy (maybe different for small medium large)
+  - [x] menu
+    - [x] item select
+    - [x] item swap
+    - [x] item merge
+    - [x] cancel
+    - [x] accept
+
+## nice-to-haves
+
+- [ ] weapons
+  - [ ] scatter shot
+    - [ ] graphics
+      - [ ] icon
+      - [ ] projectiles
+    - [ ] data
+    - [ ] functionality
+  - [ ] cluster bomb
+    - [ ] graphics
+      - [ ] icon
+      - [ ] projectiles
+    - [ ] data
+    - [ ] functionality
+  - [ ] railgun
+    - [ ] graphics
+      - [ ] icon
+      - [ ] projectiles
+    - [ ] data
+    - [ ] functionality
+- [ ] weapon mods
+  - [ ] projectiles
+    - [ ] graphics
+      - [ ] icon
+    - [ ] data
+    - [ ] functionality
+- [ ] enemies
+  - [ ] AI
+    - [ ] follow player + evasion
+    - [ ] follow path
+- [ ] implement boss
+- [ ] memory leak fix for stages

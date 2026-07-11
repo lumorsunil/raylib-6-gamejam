@@ -109,10 +109,12 @@ fn drawShop(self: *Game) void {
 
     if (rl.isMouseButtonPressed(.left)) {
         if (rl.checkCollisionPointRec(mouse_pos, skipButtonRec(self))) {
+            self.playSound(.menu_cancel);
             self.modification();
         } else if (can_afford and rl.checkCollisionPointRec(mouse_pos, buyButtonRec(self, selected_item_cost))) {
             player_component.shards -= selected_item_cost;
             _ = player_component.inventory.appendItem(selected_item);
+            self.playSound(.menu_accept);
             self.modification();
         }
     }
@@ -143,6 +145,7 @@ fn drawShop(self: *Game) void {
             drawItemDescription(self, item);
 
             if (rl.isMouseButtonPressed(.left)) {
+                self.playSound(.menu_select);
                 self.shop_state.selected_item = i;
             }
         }
@@ -281,12 +284,13 @@ fn drawModificationShip(self: *Game) void {
 
     for (player_component.body.slots, 0..) |slot, i| {
         const item = slot orelse continue;
-        const offset = player_component.body.offset(self, i);
+        const offset = player_component.body.equipOffset(self, i);
         const center = position.add(offset);
         item.sprite(self).draw(center, 2, 0);
 
         if (rl.isMouseButtonPressed(.left)) {
             if (item.sprite(self).containsPoint(center, mouse_pos, 2, 0)) {
+                self.playSound(.menu_select);
                 self.modification_state.selected_item = i;
                 self.modification_state.selected_item_inventory = player_component.body.slots;
                 self.modification_state.is_dragging = true;
@@ -304,7 +308,7 @@ fn drawModificationShip(self: *Game) void {
             const selected_item = self.modification_state.selectedItemPtr().?;
 
             for (player_component.body.slots, 0..) |*slot, i| {
-                const offset = player_component.body.offset(self, i);
+                const offset = player_component.body.equipOffset(self, i);
                 const center = position.add(offset);
 
                 if (Game.C.Item.emptySlotRenderable(self).containsPoint(center, mouse_pos, 2, 0)) {
@@ -313,10 +317,10 @@ fn drawModificationShip(self: *Game) void {
                     if (canMerge(selected_item, slot)) {
                         merge(self, selected_item, slot);
                         if (slot.* == null) {
-                            swapItems(selected_item, slot);
+                            swapItems(self, selected_item, slot);
                         }
                     } else {
-                        swapItems(selected_item, slot);
+                        swapItems(self, selected_item, slot);
                     }
 
                     self.modification_state.selected_item = null;
@@ -329,7 +333,7 @@ fn drawModificationShip(self: *Game) void {
             const selected_item = self.modification_state.selectedItemPtr().?;
 
             for (0..player_component.body.slots.len) |i| {
-                const offset = player_component.body.offset(self, i);
+                const offset = player_component.body.equipOffset(self, i);
                 const center = position.add(offset);
                 const slot_item = &player_component.body.slots[i];
 
@@ -396,6 +400,7 @@ fn drawInventory(self: *Game) void {
 
             if (rl.isMouseButtonPressed(.left)) {
                 if (item.sprite(self).containsPoint(position, mouse_pos, 1, 0)) {
+                    self.playSound(.menu_select);
                     self.modification_state.selected_item = i;
                     self.modification_state.selected_item_inventory = player_component.inventory.items;
                     self.modification_state.is_dragging = true;
@@ -430,10 +435,10 @@ fn drawInventory(self: *Game) void {
                         if (canMerge(selected_item, slot)) {
                             merge(self, selected_item, slot);
                             if (slot.* == null) {
-                                swapItems(selected_item, slot);
+                                swapItems(self, selected_item, slot);
                             }
                         } else {
-                            swapItems(selected_item, slot);
+                            swapItems(self, selected_item, slot);
                         }
 
                         self.modification_state.selected_item = null;
@@ -492,6 +497,8 @@ fn merge(self: *Game, a: *?Game.C.Item, b: *?Game.C.Item) void {
     const a_ = if (a.*) |*a_| a_ else return;
     const b_ = if (b.*) |*b_| b_ else return;
 
+    self.playSound(.menu_item_merge);
+
     switch (a_.merge(b_)) {
         .destroy => |item| {
             const player = self.player();
@@ -515,7 +522,9 @@ fn merge(self: *Game, a: *?Game.C.Item, b: *?Game.C.Item) void {
     }
 }
 
-fn swapItems(a: *?Game.C.Item, b: *?Game.C.Item) void {
+fn swapItems(self: *Game, a: *?Game.C.Item, b: *?Game.C.Item) void {
+    self.playSound(.menu_item_swap);
+
     const copy = a.*;
     a.* = b.*;
     b.* = copy;
@@ -539,7 +548,7 @@ fn drawNextLevelButton(self: *Game) void {
     const mouse_pos = rl.getScreenToWorld2D(rl.getMousePosition(), self.camera().*);
     if (rl.isMouseButtonPressed(.left)) {
         if (rl.checkCollisionPointRec(mouse_pos, button_rec)) {
-            self.nextLevel();
+            self.nextStage();
         }
     }
 }
@@ -719,15 +728,15 @@ fn drawRenderable(self: *Game, ctx: Game.EntityContext) void {
     }
 
     renderable.draw(body.position, body.scale, body.rotation);
-    drawEnemyHit(self, ctx, body.*, renderable);
+    drawEnemyHit(self, ctx, body.*);
     drawShardShimmer(self, ctx, body.*);
+    drawShield(self, ctx, body.*);
 }
 
 fn drawEnemyHit(
     self: *Game,
     ctx: Game.EntityContext,
     body: Game.C.Body,
-    renderable: Game.C.Renderable,
 ) void {
     if (ctx.tryGetConst(Game.C.Enemy)) |enemy| {
         const t = self.elapsedTime();
@@ -736,9 +745,8 @@ fn drawEnemyHit(
         const d = enemy.hit_fade_ends_at - t;
         const ratio: f32 = @floatCast(d / Game.C.Enemy.hit_fade_duration);
 
-        var renderable_fade = renderable;
+        var renderable_fade = enemy.body.body_type.hitSprite(self);
         renderable_fade.sprite.tint = .alpha(.white, ratio);
-        renderable_fade.sprite.source = .init(158, 5, 31, 17);
         renderable_fade.draw(body.position, body.scale, body.rotation);
     }
 }
@@ -764,6 +772,34 @@ fn drawShardShimmer(
     var renderable_fade = shard.shimmer_renderable(self);
     renderable_fade.sprite.tint = .alpha(.white, ratio);
     renderable_fade.draw(body.position, body.scale, body.rotation);
+}
+
+fn drawShield(
+    self: *Game,
+    ctx: Game.EntityContext,
+    body: Game.C.Body,
+) void {
+    if (ctx.tryGet(Game.C.Player)) |player| {
+        var it = player.shieldIterator();
+
+        while (it.next()) |entry| {
+            if (entry.shield.n_charges > 0) {
+                entry.shield.shieldSprite(self).draw(body.position, 1, 0);
+                return;
+            }
+        }
+    }
+
+    if (ctx.tryGet(Game.C.Enemy)) |enemy| {
+        var it = enemy.shieldIterator();
+
+        while (it.next()) |entry| {
+            if (entry.shield.n_charges > 0) {
+                entry.shield.shieldSprite(self).draw(body.position, 1, 0);
+                return;
+            }
+        }
+    }
 }
 
 fn drawGrid(self: *Game) void {
@@ -800,4 +836,8 @@ fn drawHUD(self: *Game) void {
         lives_renderable.draw(cursor, 1, 0);
         cursor.x += lives_renderable.size(1, 0).x + 4;
     }
+
+    const enemy_system = self.getSingleton(Game.S.Enemy);
+    cursor = self.worldCenterTop();
+    drawText("STAGE {}", .{enemy_system.current_stage_index}, 10, cursor, .white);
 }

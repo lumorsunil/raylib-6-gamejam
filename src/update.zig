@@ -74,6 +74,9 @@ fn updateGameplay(self: *Game) void {
     self.controllable().update(self);
     self.physics().update(self);
 
+    const shield = self.getSingleton(Game.S.Shield);
+    shield.update(self);
+
     const dot = self.getSingleton(Game.S.DamageOnTouch);
     dot.update(self);
 

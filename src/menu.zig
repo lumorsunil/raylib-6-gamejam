@@ -51,7 +51,7 @@ pub const Menu = struct {
             }),
             .lower_master_volume => game.settings.lowerMasterVolume(),
             .raise_master_volume => game.settings.raiseMasterVolume(),
-            .start_game, .unpause => game.screen_state = .gameplay,
+            .start_game, .unpause => game.startGame(),
             .quit => game.wants_to_quit = true,
         }
     }

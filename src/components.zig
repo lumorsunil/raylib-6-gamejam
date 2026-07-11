@@ -1,3 +1,4 @@
+pub const Background = @import("components/background.zig").Background;
 pub const Body = @import("components/body.zig").Body;
 pub const Controllable = @import("components/controllable.zig").Controllable;
 pub const DamageOnTouch = @import("components/damage-on-touch.zig").DamageOnTouch;
@@ -8,6 +9,7 @@ pub const FadeGradient = @import("components/fade-gradient.zig").FadeGradient;
 pub const Hitbox = @import("components/hitbox.zig").Hitbox;
 pub const Invisible = @import("components/invisible.zig").Invisible;
 pub const Item = @import("components/item.zig").Item;
+pub const Owner = @import("components/owner.zig").Owner;
 pub const Player = @import("components/player.zig").Player;
 pub const PlayerProjectile = @import("components/player-projectile.zig").PlayerProjectile;
 pub const RelativePosition = @import("components/relative-position.zig").RelativePosition;

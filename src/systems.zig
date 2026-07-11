@@ -8,3 +8,4 @@ pub const Input = @import("systems/input.zig").Input;
 pub const Physics = @import("systems/physics.zig").Physics(.{ .enable_separate_axis_update = true });
 pub const Player = @import("systems/player.zig").Player;
 pub const RelativePosition = @import("systems/relative-position.zig").RelativePosition;
+pub const Shield = @import("systems/shield.zig").Shield;

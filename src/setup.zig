@@ -1,6 +1,9 @@
+const std = @import("std");
 const Game = @import("game.zig").Game;
 const rl = @import("raylib");
 const Logo = @import("logo.zig").Logo;
+const Sound = @import("sound.zig").Sound;
+const Sounds = @import("sound.zig").Sounds;
 
 pub fn setup(self: *Game) void {
     initRaylib(self);
@@ -9,6 +12,7 @@ pub fn setup(self: *Game) void {
 
     createCamera(self);
     createSpritesheet(self);
+    createSounds(self) catch unreachable;
     createSystems(self);
     setupSystems(self);
     // createDefaultGrid(self) catch unreachable;
@@ -23,6 +27,8 @@ pub fn setupEntities(self: *Game) !void {
 fn initRaylib(self: *Game) void {
     const screen_size = self.screenSize();
     rl.initWindow(@intFromFloat(screen_size.x), @intFromFloat(screen_size.y), "Game Template");
+    rl.initAudioDevice();
+    rl.setMasterVolume(self.settings.master_volume);
 
     if (@import("builtin").cpu.arch.isWasm()) return;
 
@@ -52,6 +58,16 @@ fn createSpritesheet(self: *Game) void {
     self.addSingleton(spritesheet);
 }
 
+fn createSounds(self: *Game) !void {
+    var sounds: Sounds = undefined;
+
+    inline for (std.enums.values(Sound)) |sound| {
+        @field(sounds, @tagName(sound)) = try rl.loadSound(sound.filename());
+    }
+
+    self.addSingleton(sounds);
+}
+
 fn createSystems(self: *Game) void {
     self.addSingleton(Game.S.Background.init());
     self.addSingleton(Game.S.Camera.init());
@@ -63,6 +79,7 @@ fn createSystems(self: *Game) void {
     self.addSingleton(Game.S.Physics.init());
     self.addSingleton(Game.S.Player.init());
     self.addSingleton(Game.S.RelativePosition.init());
+    self.addSingleton(Game.S.Shield.init());
 }
 
 pub fn setupSystems(self: *Game) void {
@@ -80,7 +97,7 @@ fn createPlayer(self: *Game) !void {
     player.add(try Game.C.Player.init(self.allocator));
     const player_component = player.get(Game.C.Player);
     player_component.body.slots[0] = .weapon_machine_gun;
-    player_component.body.slots[1] = .weapon_machine_gun;
+    player_component.body.slots[1] = .body_mod_shield;
     player_component.inventory.items[0] = .weapon_machine_gun;
     player_component.inventory.items[1] = .body_mod_shield;
     var renderable = player_component.body.body_type.sprite(self);

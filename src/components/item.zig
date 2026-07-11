@@ -5,12 +5,44 @@ pub const Item = struct {
     item_type: ItemType,
     tier: usize = 0,
 
-    pub const weapon_machine_gun: Item = .init(.initWeapon(.init(.initMachineGun())));
+    pub const weapon_machine_gun: Item = .init(.initWeapon(.init(.initMachineGun(0))));
     pub const weapon_mod_damage: Item = .init(.initWeaponMod(.init(.initDamage())));
-    pub const body_mod_shield: Item = .init(.initBodyMod(.init(.initShield())));
+    pub const body_mod_shield: Item = .init(.initBodyMod(.init(.initShield(0))));
 
     pub fn init(item_type: ItemType) @This() {
         return .{ .item_type = item_type };
+    }
+
+    pub fn initRandom(
+        game: *Game,
+        value: usize,
+        item_type: std.meta.Tag(ItemType),
+    ) @This() {
+        const tier = @min(2, @divFloor(value, 20));
+
+        return switch (item_type) {
+            .weapon => initRandomWeapon(game, tier),
+            .body_mod => initRandomBodyMod(game, tier),
+            else => unreachable,
+        };
+    }
+
+    pub fn initRandomWeapon(game: *Game, tier: usize) @This() {
+        const weapon_type = game.random().enumValue(std.meta.Tag(WeaponType));
+        var item: @This() = .init(.{ .weapon = .init(switch (weapon_type) {
+            inline else => |t| @unionInit(WeaponType, @tagName(t), .init(tier)),
+        }) });
+        item.tier = tier;
+        return item;
+    }
+
+    pub fn initRandomBodyMod(game: *Game, tier: usize) @This() {
+        const body_mod_type = game.random().enumValue(std.meta.Tag(BodyModType));
+        var item: @This() = .init(.{ .body_mod = .init(switch (body_mod_type) {
+            inline else => |t| @unionInit(BodyModType, @tagName(t), .init(tier)),
+        }) });
+        item.tier = tier;
+        return item;
     }
 
     pub fn cost(self: @This()) usize {
@@ -25,6 +57,10 @@ pub const Item = struct {
         return switch (self.item_type) {
             inline else => |s| s.sprite(game, self),
         };
+    }
+
+    pub fn shardsDropped(self: @This()) usize {
+        return (self.tier + 1) * 20;
     }
 
     pub fn canMergeWith(self: @This(), other: @This()) bool {
@@ -143,10 +179,13 @@ pub const Item = struct {
             game: *Game,
             item: *Game.C.Item,
             position: Game.Vector,
+            context: anytype,
+            onSpawnProjectile: *const fn (@TypeOf(context), Game.EntityContext) void,
         ) void {
+            std.log.debug("shooting, cd: {}s , roff: {}", .{ self.shoot_cooldown, self.weapon_type.machine_gun.rate_of_fire_factor });
             self.next_shoot_at = game.elapsedTime() + self.shoot_cooldown;
             switch (self.weapon_type) {
-                inline else => |*s| s.shoot(game, item, position),
+                inline else => |*s| s.shoot(game, item, position, context, onSpawnProjectile),
             }
         }
 
@@ -181,8 +220,8 @@ pub const Item = struct {
         // railgun,
         // cluster_bomb,
 
-        pub fn initMachineGun() @This() {
-            return .{ .machine_gun = .init() };
+        pub fn initMachineGun(tier: usize) @This() {
+            return .{ .machine_gun = .init(tier) };
         }
 
         pub fn cost(self: @This()) usize {
@@ -212,10 +251,41 @@ pub const Item = struct {
         shoot_cooldown: f64 = 0.3,
         base_damage: f32 = 1,
         damage_factor: f32 = 1,
+        rate_of_fire_factor: f32 = 1,
+        projectile_speed_factor: f32 = 1,
         shop_cost: usize = 50,
 
-        pub fn init() @This() {
-            return .{};
+        pub fn init(tier: usize) @This() {
+            return switch (tier) {
+                0 => .{
+                    .n_projectiles = 1,
+                    .shoot_cooldown = 0.3,
+                    .base_damage = 1,
+                    .damage_factor = 1,
+                    .rate_of_fire_factor = 1,
+                    .projectile_speed_factor = 1,
+                    .shop_cost = 50,
+                },
+                1 => .{
+                    .n_projectiles = 1,
+                    .shoot_cooldown = 0.25,
+                    .base_damage = 2,
+                    .damage_factor = 1,
+                    .rate_of_fire_factor = 1,
+                    .projectile_speed_factor = 1,
+                    .shop_cost = 100,
+                },
+                2 => .{
+                    .n_projectiles = 1,
+                    .shoot_cooldown = 0.20,
+                    .base_damage = 3,
+                    .damage_factor = 1,
+                    .rate_of_fire_factor = 1,
+                    .projectile_speed_factor = 1,
+                    .shop_cost = 150,
+                },
+                else => unreachable,
+            };
         }
 
         pub fn damage(self: WeaponMachineGun) f32 {
@@ -227,7 +297,7 @@ pub const Item = struct {
         }
 
         pub fn cooldown(self: @This()) f64 {
-            return self.shoot_cooldown;
+            return self.shoot_cooldown / self.rate_of_fire_factor;
         }
 
         pub fn sprite(_: @This(), game: *Game, item: Item) Game.C.Renderable {
@@ -239,26 +309,70 @@ pub const Item = struct {
             };
         }
 
-        fn machineGunShootOne(self: @This(), game: *Game, item: Item, position: Game.Vector) void {
-            _ = spawnProjectile(game, position, .init(0, -500), self.sprite(game, item));
+        pub fn projectileSprite(_: @This(), game: *Game, item: Item) Game.C.Renderable {
+            return switch (item.tier) {
+                0 => game.initSprite(.init(121, 160, 1, 8)),
+                1 => game.initSprite(.init(138, 160, 3, 8)),
+                2 => game.initSprite(.init(155, 160, 5, 11)),
+                else => unreachable,
+            };
         }
 
-        fn machineGunShootTwo(self: @This(), game: *Game, item: Item, position: Game.Vector) void {
-            const sprite_ = self.sprite(game, item);
+        fn projectileVelocity(self: @This()) Game.Vector {
+            return .init(0, -500 * self.projectile_speed_factor);
+        }
+
+        fn machineGunShootOne(
+            self: @This(),
+            game: *Game,
+            item: Item,
+            position: Game.Vector,
+            context: anytype,
+            onSpawnProjectile: *const fn (@TypeOf(context), Game.EntityContext) void,
+        ) void {
+            const velocity = self.projectileVelocity();
+            _ = spawnProjectile(
+                game,
+                position,
+                velocity,
+                self.projectileSprite(game, item),
+                context,
+                onSpawnProjectile,
+            );
+        }
+
+        fn machineGunShootTwo(
+            self: @This(),
+            game: *Game,
+            item: Item,
+            position: Game.Vector,
+            context: anytype,
+            onSpawnProjectile: *const fn (@TypeOf(context), Game.EntityContext) void,
+        ) void {
+            const sprite_ = self.projectileSprite(game, item);
+            const velocity = self.projectileVelocity();
 
             var cursor = position;
             const space_between = sprite_.size(1, 0).x + 8;
             cursor.x -= space_between / 2.0;
-            _ = spawnProjectile(game, cursor, .init(0, -500), sprite_);
+            _ = spawnProjectile(game, cursor, velocity, sprite_, context, onSpawnProjectile);
 
             cursor.x += space_between;
-            _ = spawnProjectile(game, cursor, .init(0, -500), sprite_);
+            _ = spawnProjectile(game, cursor, velocity, sprite_, context, onSpawnProjectile);
         }
 
-        pub fn shoot(self: *@This(), game: *Game, item: *Item, position: Game.Vector) void {
+        pub fn shoot(
+            self: *@This(),
+            game: *Game,
+            item: *Item,
+            position: Game.Vector,
+            context: anytype,
+            onSpawnProjectile: *const fn (@TypeOf(context), Game.EntityContext) void,
+        ) void {
+            game.playSound(.machine_gun);
             switch (item.tier) {
-                0 => self.machineGunShootOne(game, item.*, position),
-                else => self.machineGunShootTwo(game, item.*, position),
+                0 => self.machineGunShootOne(game, item.*, position, context, onSpawnProjectile),
+                else => self.machineGunShootTwo(game, item.*, position, context, onSpawnProjectile),
             }
         }
 
@@ -307,11 +421,20 @@ pub const Item = struct {
 
     pub const WeaponModType = union(enum) {
         damage: WeaponModDamage,
-        // rate_of_fire,
+        rate_of_fire: WeaponModRateOfFire,
+        projectile_speed: WeaponModProjectileSpeed,
         // projectiles,
 
         pub fn initDamage() @This() {
             return .{ .damage = .init() };
+        }
+
+        pub fn initRateOfFire() @This() {
+            return .{ .rate_of_fire = .init() };
+        }
+
+        pub fn initProjectileSpeed() @This() {
+            return .{ .projectile_speed = .init() };
         }
 
         pub fn cost(self: @This()) usize {
@@ -331,7 +454,7 @@ pub const Item = struct {
     };
 
     pub const WeaponModDamage = struct {
-        damage_factor: f32 = 0.2,
+        damage_factor: f32 = 0.5,
         shop_cost: usize = 30,
 
         pub fn init() @This() {
@@ -361,6 +484,74 @@ pub const Item = struct {
             writer: *std.Io.Writer,
         ) std.Io.Writer.Error!void {
             return writer.print("Weapon Mod: Damage\n\nDamage +{d:.0}%", .{self.damage_factor * 100});
+        }
+    };
+
+    pub const WeaponModRateOfFire = struct {
+        rate_of_fire_factor: f32 = 0.5,
+        shop_cost: usize = 30,
+
+        pub fn init() @This() {
+            return .{};
+        }
+
+        pub fn cost(self: @This()) usize {
+            return self.shop_cost;
+        }
+
+        pub fn sprite(_: @This(), game: *Game, _: Item) Game.C.Renderable {
+            return game.initSprite(.init(95, 162, 17, 19));
+        }
+
+        pub fn apply(self: @This(), weapon_type: *WeaponType) void {
+            switch (weapon_type.*) {
+                inline else => |*s| {
+                    if (@hasField(@TypeOf(s.*), "rate_of_fire_factor")) {
+                        s.rate_of_fire_factor += self.rate_of_fire_factor;
+                    }
+                },
+            }
+        }
+
+        pub fn format(
+            self: @This(),
+            writer: *std.Io.Writer,
+        ) std.Io.Writer.Error!void {
+            return writer.print("Weapon Mod: Rate of Fire\n\nRate of Fire +{d:.0}%", .{self.rate_of_fire_factor * 100});
+        }
+    };
+
+    pub const WeaponModProjectileSpeed = struct {
+        projectile_speed_factor: f32 = 0.5,
+        shop_cost: usize = 15,
+
+        pub fn init() @This() {
+            return .{};
+        }
+
+        pub fn cost(self: @This()) usize {
+            return self.shop_cost;
+        }
+
+        pub fn sprite(_: @This(), game: *Game, _: Item) Game.C.Renderable {
+            return game.initSprite(.init(163, 182, 17, 19));
+        }
+
+        pub fn apply(self: @This(), weapon_type: *WeaponType) void {
+            switch (weapon_type.*) {
+                inline else => |*s| {
+                    if (@hasField(@TypeOf(s.*), "projectile_speed_factor")) {
+                        s.projectile_speed_factor += self.projectile_speed_factor;
+                    }
+                },
+            }
+        }
+
+        pub fn format(
+            self: @This(),
+            writer: *std.Io.Writer,
+        ) std.Io.Writer.Error!void {
+            return writer.print("Weapon Mod: Projectile Speed\n\nProjectile Speed +{d:.0}%", .{self.projectile_speed_factor * 100});
         }
     };
 
@@ -400,8 +591,8 @@ pub const Item = struct {
         shield: BodyModShield,
         // evasion,
 
-        pub fn initShield() @This() {
-            return .{ .shield = .init() };
+        pub fn initShield(tier: usize) @This() {
+            return .{ .shield = .init(tier) };
         }
 
         pub fn cost(self: @This()) usize {
@@ -422,12 +613,36 @@ pub const Item = struct {
 
     pub const BodyModShield = struct {
         charges_max: usize = 1,
-        regenerate_charge_duration: f64 = 3,
+        regenerate_charge_duration: f64 = 6,
+        regenerate_charge_at: f64 = 0,
         n_charges: usize = 1,
         shop_cost: usize = 70,
 
-        pub fn init() @This() {
-            return .{};
+        pub fn init(tier: usize) @This() {
+            return switch (tier) {
+                0 => .{
+                    .charges_max = 1,
+                    .regenerate_charge_duration = 6,
+                    .regenerate_charge_at = 0,
+                    .n_charges = 1,
+                    .shop_cost = 70,
+                },
+                1 => .{
+                    .charges_max = 2,
+                    .regenerate_charge_duration = 6,
+                    .regenerate_charge_at = 0,
+                    .n_charges = 2,
+                    .shop_cost = 140,
+                },
+                2 => .{
+                    .charges_max = 3,
+                    .regenerate_charge_duration = 6,
+                    .regenerate_charge_at = 0,
+                    .n_charges = 3,
+                    .shop_cost = 210,
+                },
+                else => unreachable,
+            };
         }
 
         pub fn cost(self: @This()) usize {
@@ -441,6 +656,10 @@ pub const Item = struct {
                 2 => game.initSprite(.init(149, 121, 17, 19)),
                 else => unreachable,
             };
+        }
+
+        pub fn shieldSprite(_: @This(), game: *Game) Game.C.Renderable {
+            return game.initSprite(.init(10, 210, 47, 46));
         }
 
         pub fn format(
@@ -460,13 +679,16 @@ fn spawnProjectile(
     position: Game.Vector,
     velocity: Game.Vector,
     sprite: Game.C.Renderable,
+    context: anytype,
+    onSpawnProjectile: *const fn (@TypeOf(context), Game.EntityContext) void,
 ) Game.EntityContext {
     const ctx = game.createEntity();
     ctx.add(Game.C.Body.init(position));
     const body = ctx.get(Game.C.Body);
     body.velocity = velocity;
     ctx.add(sprite);
-    ctx.add(Game.C.PlayerProjectile.init(1));
+    onSpawnProjectile(context, ctx);
+    // ctx.add(Game.C.PlayerProjectile.init(1));
 
     return ctx;
 }
