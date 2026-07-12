@@ -1,5 +1,6 @@
 const std = @import("std");
 const Game = @import("../game.zig").Game;
+const Animation = @import("../animation.zig").Animation;
 
 pub const Player = struct {
     lives: usize = 3,
@@ -11,15 +12,21 @@ pub const Player = struct {
     destroyed_at: ?f64 = null,
     invincibility_ends_at: f64 = 0,
     inventory: Inventory,
+    shield_animation: Animation,
 
     pub const respawn_time = 3;
     pub const grace_period_duration = 1;
 
-    pub fn init(allocator: std.mem.Allocator) !@This() {
+    pub fn init(game: *Game) !@This() {
         return .{
-            .body = try .init(allocator, .two),
-            .inventory = try .init(allocator),
+            .body = try .init(game.allocator, .two),
+            .inventory = try .init(game.allocator),
+            .shield_animation = game.newAnimation(.shield_recharge, false),
         };
+    }
+
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.body.slots);
     }
 
     pub fn hit(self: *Player, game: *Game, _: usize) void {
@@ -37,6 +44,9 @@ pub const Player = struct {
                 entry.shield.regenerate_charge_at = game.elapsedTime() + entry.shield.regenerate_charge_duration;
                 self.invincibility_ends_at = game.elapsedTime() + grace_period_duration;
                 game.playSound(.shield_hit);
+                if (entry.shield.n_charges == 0) {
+                    game.player().get(Game.C.Player).shield_animation = game.newAnimation(.shield_dissipate, false);
+                }
                 return;
             }
         }

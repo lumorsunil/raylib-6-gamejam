@@ -1,6 +1,8 @@
 const std = @import("std");
 const Game = @import("../game.zig").Game;
 
+const n_waves_max = 10;
+
 const EnemyDef = struct {
     // tier: usize,
     body: Game.C.Enemy.Body,
@@ -65,11 +67,11 @@ const SpawnDef = union(enum) {
     enemy: EnemyDef,
     group: Group,
 
-    pub fn initRandom(game: *Game, value: usize) !@This() {
+    pub fn initRandom(game: *Game, ship_value: usize, wave_index: usize) !@This() {
         if (game.random().float(f32) > 0.2) {
-            return .{ .enemy = try .initRandom(game, value) };
+            return .{ .enemy = try .initRandom(game, ship_value) };
         } else {
-            return .{ .group = try .initRandom(game, value) };
+            return .{ .group = try .initRandom(game, ship_value, wave_index) };
         }
     }
 
@@ -88,17 +90,31 @@ const SpawnDef = union(enum) {
             return .{ .enemies = enemies };
         }
 
-        pub fn initRandom(game: *Game, value: usize) !@This() {
-            const n_enemies = game.random().intRangeAtMost(usize, 2, 4);
+        pub fn initRandom(game: *Game, ship_value: usize, wave_index: usize) !@This() {
+            const n_enemies_table = [n_waves_max]struct { usize, usize }{
+                .{ 2, 2 }, // easy (ship_value * 1)
+                .{ 2, 2 },
+                .{ 2, 3 },
+                .{ 2, 3 },
+                .{ 2, 4 },
+                .{ 2, 2 }, // difficult (ship_value * 2)
+                .{ 2, 4 }, // moderate (ship_value * 1.5)
+                .{ 2, 4 }, // moderate (ship_value * 1.5)
+                .{ 2, 4 }, // moderate (ship_value * 1.5)
+                .{ 2, 3 }, // difficult (ship_value * 2)
+            };
+            const n_enemies_min, const n_enemies_max = n_enemies_table[wave_index];
+
+            const n_enemies = game.random().intRangeAtMost(usize, n_enemies_min, n_enemies_max);
             const enemies = try game.allocator.alloc(GroupEnemy, n_enemies);
             const x_step: f32 = 1.0 / @as(f32, @floatFromInt(n_enemies + 1));
 
-            const same_enemy = if (game.random().boolean()) null else try EnemyDef.initRandom(game, value);
+            const same_enemy = if (game.random().boolean()) null else try EnemyDef.initRandom(game, ship_value);
 
             for (enemies, 0..) |*enemy, i| {
                 const fi: f32 = @floatFromInt(i);
                 const position = Game.Vector.init(x_step * (fi + 1), 0);
-                const enemy_def: EnemyDef = same_enemy orelse try .initRandom(game, value);
+                const enemy_def: EnemyDef = same_enemy orelse try .initRandom(game, ship_value);
                 enemy.* = .init(position, null, enemy_def.clone(game.allocator) catch unreachable);
             }
 
@@ -166,7 +182,7 @@ const WaveDef = struct {
         return .{ .position = position, .spawns = spawns, .interval = interval };
     }
 
-    pub fn initRandom(game: *Game, value: usize) !@This() {
+    pub fn initRandom(game: *Game, ship_value: usize, wave_index: usize) !@This() {
         const lanes = [_]Game.Vector{
             .init(0.25, 0),
             .init(0.5, 0),
@@ -177,10 +193,25 @@ const WaveDef = struct {
 
         const interval = game.random().float(f32) * 1.8 + 0.2;
 
-        const n_spawns = game.random().intRangeAtMost(usize, 3, 10);
+        const n_spawns_table = [n_waves_max]struct { usize, usize }{
+            .{ 3, 5 }, // easy (ship_value * 1)
+            // .{ 1, 1 }, // easy (ship_value * 1)
+            .{ 3, 5 },
+            .{ 3, 6 },
+            .{ 3, 6 },
+            .{ 2, 4 }, // difficult (ship_value * 2)
+            .{ 3, 6 }, // moderate (ship_value * 1.5)
+            .{ 4, 7 }, // moderate (ship_value * 1.5)
+            .{ 4, 7 }, // moderate (ship_value * 1.5)
+            .{ 4, 8 }, // moderate (ship_value * 1.5)
+            .{ 5, 6 }, // difficult (ship_value * 2)
+        };
+        const n_spawns_min, const n_spawns_max = n_spawns_table[wave_index];
+
+        const n_spawns = game.random().intRangeAtMost(usize, n_spawns_min, n_spawns_max);
         const spawns = try game.allocator.alloc(SpawnDef, n_spawns);
 
-        for (spawns) |*spawn| spawn.* = try .initRandom(game, value);
+        for (spawns) |*spawn| spawn.* = try .initRandom(game, ship_value, wave_index);
 
         return .init(lane, spawns, interval);
     }
@@ -256,16 +287,16 @@ const Stage = struct {
     }
 
     pub fn initRandom(game: *Game, starting_value: usize) !@This() {
-        std.log.debug("randomizing stage with value {}", .{starting_value});
-        const n_waves = 1;
+        const n_waves = n_waves_max;
+        // const n_waves = 1;
 
         const waves = try game.allocator.alloc(WaveDef, n_waves);
         for (waves, 0..) |*wave, i| {
             const easy_wave = starting_value;
             const moderate_wave: usize = @intFromFloat(@as(f32, @floatFromInt(starting_value)) * 1.5);
             const difficult_wave = starting_value * 2;
-            const wave_difficulty = if (i == 5 or i == 9) difficult_wave else if (i < 5) easy_wave else moderate_wave;
-            wave.* = try .initRandom(game, wave_difficulty);
+            const ship_points = if (i == 5 or i == 9) difficult_wave else if (i < 5) easy_wave else moderate_wave;
+            wave.* = try .initRandom(game, ship_points, i);
         }
 
         return .init(waves, 4, starting_value);
@@ -347,10 +378,14 @@ pub const Enemy = struct {
     current_stage_index: usize = 0,
     current_wave: Wave = undefined,
     current_value: usize = initial_value,
+    stage_ends_at: ?f64 = null,
 
     pub const initial_value = 5;
+    // pub const initial_value = 25;
     pub const merge_distance_threshold: f32 = 3;
-    pub const max_stages = 3;
+    // pub const max_stages = 3;
+    pub const max_stages = 6;
+    pub const stage_end_duration = 4;
 
     pub fn init() @This() {
         return .{};
@@ -358,10 +393,12 @@ pub const Enemy = struct {
 
     pub fn nextStage(self: *@This(), game: *Game) !void {
         self.current_stage = try .initRandom(game, self.current_value);
-        std.log.debug("{f}", .{self.current_stage});
         self.current_wave = self.current_stage.nextWave();
         self.current_value += 10;
         self.current_stage_index += 1;
+        self.stage_ends_at = null;
+
+        self.setup(game);
     }
 
     pub fn reset(self: *Enemy, game: *Game) !void {
@@ -373,6 +410,7 @@ pub const Enemy = struct {
     pub fn update(self: *Enemy, game: *Game) void {
         self.updateStage(game);
         self.updateHits(game);
+        self.updateAI(game);
         self.updateWeapons(game);
         self.updateRemoveOutOfBounds(game);
     }
@@ -394,23 +432,38 @@ pub const Enemy = struct {
         self.current_stage.advance(t);
 
         if (self.current_stage.isOver()) {
-            if (self.current_stage_index >= max_stages) {
-                game.ending();
-                return;
-            } else {
-                game.shop();
-                return;
+            if (self.stage_ends_at) |stage_ends_at| {
+                if (stage_ends_at <= game.elapsedTime()) {
+                    self.endOfStage(game);
+                }
+            } else if (noMoreEnemies(game)) {
+                self.stage_ends_at = game.elapsedTime() + stage_end_duration;
             }
+
+            return;
         }
 
         self.current_wave = self.current_stage.nextWave();
         self.setup(game);
     }
 
+    fn noMoreEnemies(game: *Game) bool {
+        var it = game.entityIterator(.{Game.C.Enemy}, .{});
+        return it.next() == null;
+    }
+
+    fn endOfStage(self: *Enemy, game: *Game) void {
+        if (self.current_stage_index >= max_stages) {
+            game.ending();
+        } else {
+            game.shop();
+        }
+    }
+
     pub fn setup(self: *Enemy, game: *Game) void {
         const t = game.elapsedTime();
         self.current_stage.setup(t);
-        self.current_wave.setup(t);
+        self.current_wave.setup(t + self.current_stage.interval);
     }
 
     fn spawnNext(self: *Enemy, game: *Game) void {
@@ -459,7 +512,7 @@ pub const Enemy = struct {
         ctx.add(Game.C.DamageOnTouch{ .destroy_source = false });
         var weapon_it = enemy.weaponIterator();
         var weapon_rof_debuff = Game.C.Item.init(.initWeaponMod(.init(.initRateOfFire())));
-        weapon_rof_debuff.item_type.weapon_mod.weapon_mod_type.rate_of_fire.rate_of_fire_factor = -0.5;
+        weapon_rof_debuff.item_type.weapon_mod.weapon_mod_type.rate_of_fire.rate_of_fire_factor = -0.95;
         var weapon_ps_debuff = Game.C.Item.init(.initWeaponMod(.init(.initProjectileSpeed())));
         weapon_ps_debuff.item_type.weapon_mod.weapon_mod_type.projectile_speed.projectile_speed_factor = -0.8;
 
@@ -510,6 +563,15 @@ pub const Enemy = struct {
             return enemy.destroy();
         }
         enemy_component.hit_fade_ends_at = t + Game.C.Enemy.hit_fade_duration;
+        const knockback = enemy.getOrAdd(Game.C.Knockback);
+        const projectile_body = projectile.get(Game.C.Body);
+        const knockback_factor: f32 = switch (enemy_component.body.body_type) {
+            .small => 6000,
+            .medium => 3000,
+            .large => 2000,
+        };
+        const knockback_force = projectile_body.velocity.normalize().scale(knockback_factor);
+        knockback.* = .init(knockback_force);
     }
 
     fn spawnExplosion(game: *Game, position: Game.Vector) void {
@@ -631,15 +693,35 @@ pub const Enemy = struct {
         ctx.add(shard.renderable(game));
     }
 
+    fn updateAI(_: *Enemy, game: *Game) void {
+        var it = game.entityIterator(.{Game.C.Enemy}, .{});
+
+        while (it.next()) |ctx| {
+            const enemy = ctx.get(Game.C.Enemy);
+            enemy.ai.update(game, ctx);
+        }
+    }
+
     fn updateWeapons(_: *Enemy, game: *Game) void {
         var it = game.entityIterator(.{Game.C.Enemy}, .{});
 
         while (it.next()) |ctx| {
             const enemy = ctx.get(Game.C.Enemy);
 
+            var has_weapon = false;
+
             var weapon_it = enemy.weaponIterator();
             while (weapon_it.next()) |entry| {
                 updateWeapon(game, entry.item, entry.slot_index, ctx, enemy);
+                has_weapon = true;
+            }
+
+            if (!has_weapon) {
+                if (enemy.next_basic_shot_at <= game.elapsedTime()) {
+                    if (game.random().float(f32) <= 0.01) {
+                        shootBasicWeapon(game, ctx, enemy);
+                    }
+                }
             }
         }
 
@@ -671,12 +753,174 @@ pub const Enemy = struct {
         }
     }
 
-    fn onSpawnProjectile(enemy_ctx: Game.EntityContext, ctx: Game.EntityContext) void {
+    const homing_bullet_chance = 0.3;
+    // const homing_bullet_chance = 1.3;
+
+    fn shootBasicWeapon(
+        game: *Game,
+        ctx: Game.EntityContext,
+        enemy: *Game.C.Enemy,
+    ) void {
+        enemy.next_basic_shot_at = game.elapsedTime() + Game.C.Enemy.basic_shot_cooldown;
+
+        const bullet_ctx = game.createEntity();
+        bullet_ctx.add(Game.C.StateMachine.init(BasicBulletStateMachine.initial));
+        const is_aiming_for_player = game.random().float(f32) <= homing_bullet_chance;
+        bullet_ctx.add(BasicBulletStateMachine.State{
+            .is_aiming_for_player = is_aiming_for_player,
+        });
+        const animation = if (is_aiming_for_player)
+            game.newAnimation(.enemy_bullet_blue_spawn, false)
+        else
+            game.newAnimation(.enemy_bullet_spawn, false);
+        bullet_ctx.add(animation);
+        bullet_ctx.add(animation.currentFrame());
+        const enemy_body = ctx.get(Game.C.Body);
+        var body = Game.C.Body.init(enemy_body.position);
+        const offset_distance = 8;
+        const offset = Game.Vector.init(0, -offset_distance);
+        body.position = body.position.add(offset);
+        body.rotation = enemy_body.rotation;
+        bullet_ctx.add(body);
+        bullet_ctx.add(Game.C.DamageOnTouch.init());
+        bullet_ctx.add(Game.C.Owner.init(ctx));
+        bullet_ctx.add(Game.C.RelativePosition.init(ctx, offset, true));
+    }
+
+    const BasicBulletStateMachine = struct {
+        const State = struct {
+            charging_completed_at: f64 = 0,
+            is_aiming_for_player: bool = false,
+            homing_ends_at: f64 = 0,
+
+            pub const homing_duration = 1.5;
+        };
+
+        pub fn initial(ctx: Game.C.StateMachineContext) void {
+            const animation = ctx.ctx.get(Game.C.Animation);
+            animation.start(ctx.elapsedTime());
+            ctx.setState(charging);
+        }
+
+        pub fn charging(ctx: Game.C.StateMachineContext) void {
+            const maybe_animation = ctx.ctx.tryGet(Game.C.Animation);
+
+            if (maybe_animation) |animation| {
+                if (animation.isDone()) {
+                    const renderable = ctx.ctx.get(Game.C.Renderable);
+                    renderable.* = animation.lastFrame();
+                    ctx.ctx.remove(Game.C.Animation);
+                    ctx.ctx.get(State).charging_completed_at = ctx.elapsedTime() + 0.3;
+                }
+            } else if (ctx.ctx.get(State).charging_completed_at <= ctx.elapsedTime()) {
+                ctx.ctx.remove(Game.C.RelativePosition);
+                ctx.setState(shoot);
+            }
+        }
+
+        const shoot = struct {
+            pub fn pre(ctx: Game.C.StateMachineContext) void {
+                const owner = ctx.ctx.get(Game.C.Owner);
+                if (!owner.owner.valid()) {
+                    ctx.ctx.destroy();
+                    return;
+                }
+                const owner_body = owner.owner.get(Game.C.Body);
+                const body = ctx.ctx.get(Game.C.Body);
+                const added_speed: f32 = if (ctx.ctx.get(State).is_aiming_for_player)
+                    75
+                else
+                    25;
+                const min_speed: f32 = 75;
+                const speed = @max(min_speed, body.velocity.length() + added_speed);
+                var angle: f32 = 0;
+                if (ctx.ctx.get(State).is_aiming_for_player) {
+                    const player = ctx.ctx.game.player();
+                    const player_body = player.get(Game.C.Body);
+                    const rel = player_body.position.subtract(owner_body.position);
+                    angle = std.math.atan2(rel.y, rel.x);
+                } else {
+                    angle = body.rotation + -std.math.pi / 2.0;
+                }
+                var velocity = Game.Vector.init(speed, 0).rotate(angle);
+
+                if (!ctx.ctx.get(State).is_aiming_for_player) {
+                    velocity = velocity.add(owner_body.velocity);
+                }
+
+                body.velocity = velocity;
+            }
+
+            pub fn update(ctx: Game.C.StateMachineContext) void {
+                if (ctx.ctx.get(State).is_aiming_for_player) {
+                    ctx.setState(homing);
+                }
+            }
+        };
+
+        pub const homing = struct {
+            pub fn pre(ctx: Game.C.StateMachineContext) void {
+                ctx.ctx.get(State).homing_ends_at = ctx.elapsedTime() + State.homing_duration;
+            }
+
+            pub fn update(ctx: Game.C.StateMachineContext) void {
+                if (ctx.ctx.get(State).homing_ends_at <= ctx.elapsedTime()) {
+                    return ctx.setState(go_straight);
+                }
+
+                const body = ctx.ctx.get(Game.C.Body);
+                const player = ctx.ctx.game.player();
+                const player_body = player.get(Game.C.Body);
+                const rel = player_body.position.subtract(body.position);
+                const target_angle = std.math.atan2(rel.y, rel.x);
+                const current_angle = std.math.atan2(body.velocity.y, body.velocity.x);
+                const turn_rate: f32 = std.math.pi * 2.0;
+                const angle_diff = clampAngleDiff(
+                    current_angle,
+                    target_angle,
+                    turn_rate * ctx.deltaTime(),
+                );
+
+                body.velocity = body.velocity.rotate(angle_diff);
+            }
+        };
+
+        fn clampAngle(a: f32, b: f32, max_diff: f32) f32 {
+            return a + clampAngleDiff(a, b, max_diff);
+        }
+
+        fn clampAngleDiff(a: f32, b: f32, max_diff: f32) f32 {
+            const diff = angleDiff(a, b);
+            return std.math.clamp(diff, -max_diff, max_diff);
+        }
+
+        fn angleDiff(a: f32, b: f32) f32 {
+            var mins: [3]f32 = undefined;
+
+            mins[0] = b - a;
+            mins[1] = (b + std.math.pi * 2.0) - a;
+            mins[2] = (b - std.math.pi * 2.0) - a;
+
+            var min_i: usize = 0;
+
+            for (0..mins.len) |i| {
+                if (@abs(mins[i]) < @abs(mins[min_i])) {
+                    min_i = i;
+                }
+            }
+
+            return mins[min_i];
+        }
+
+        pub fn go_straight(_: Game.C.StateMachineContext) void {}
+    };
+
+    fn onSpawnProjectile(_: Game.EntityContext, ctx: Game.EntityContext) void {
         ctx.add(Game.C.DamageOnTouch{});
         const body = ctx.get(Game.C.Body);
         body.velocity.y *= -1;
-        const enemy_body = enemy_ctx.get(Game.C.Body);
-        body.velocity = body.velocity.add(enemy_body.velocity);
+        // const enemy_body = enemy_ctx.get(Game.C.Body);
+        // body.velocity = body.velocity.add(enemy_body.velocity);
         body.rotation = std.math.pi;
     }
 

@@ -12,6 +12,7 @@ pub const Input = struct {
 
     pub const Action = enum {
         start,
+        cancel,
         shoot,
         move_right,
         move_up,
@@ -21,6 +22,7 @@ pub const Input = struct {
 
     pub const action_map = [std.meta.tags(Action).len]rl.GamepadButton{
         .middle_right, // start
+        .middle_right, // cancel
         .right_face_left, // shoot
         .left_face_right, // move_right
         .left_face_up, // move_up
@@ -30,6 +32,7 @@ pub const Input = struct {
 
     pub const alternative_map = [std.meta.tags(Action).len]rl.KeyboardKey{
         .enter, // start
+        .escape, // cancel
         .space, // shoot
         .d, // move_right
         .w, // move_up

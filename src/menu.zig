@@ -1,11 +1,43 @@
+const std = @import("std");
 const Game = @import("game.zig").Game;
+const rl = @import("raylib");
 
 pub const Menu = struct {
     selected_item: usize = 0,
     items: []const MenuItem = &.{},
 
+    pub const title_pos_rel = Game.Vector.init(0.5, 0.3);
+    pub const item_font_size = 9.0;
+
     pub fn init() @This() {
         return .{};
+    }
+
+    pub fn isMenu(self: @This(), menu: []const MenuItem) bool {
+        return std.meta.eql(self.items, menu);
+    }
+
+    pub fn menuItemRectangle(self: @This(), game: *Game, menu_item: usize) rl.Rectangle {
+        var cursor = game.getAbsolutePos(title_pos_rel);
+        cursor.y += 12 + 24;
+        cursor.y += 18 * @as(f32, @floatFromInt(menu_item));
+
+        if (self.isMenu(settings_menu) or self.isMenu(pause_settings_menu)) {
+            if (menu_item > 0) {
+                cursor.y += 18;
+            }
+        }
+
+        const size = Game.Vector.init(128, 12);
+        const tl = cursor.subtract(size.scale(0.5));
+
+        return .init(tl.x, tl.y, size.x, size.y);
+    }
+
+    pub fn masterVolumeRectangle(self: @This(), game: *Game) rl.Rectangle {
+        var position = self.menuItemRectangle(game, 0);
+        position.y += 18;
+        return .init(position.x, position.y, 128, 9);
     }
 
     pub fn moveUp(self: *Menu) void {
@@ -51,7 +83,9 @@ pub const Menu = struct {
             }),
             .lower_master_volume => game.settings.lowerMasterVolume(),
             .raise_master_volume => game.settings.raiseMasterVolume(),
-            .start_game, .unpause => game.startGame(),
+            .test_volume => game.settings.testVolume(game),
+            .start_game => game.startGame(),
+            .unpause => game.unpause(),
             .quit => game.wants_to_quit = true,
         }
     }
@@ -61,6 +95,7 @@ pub const Menu = struct {
         set_menu: MenuType,
         lower_master_volume,
         raise_master_volume,
+        test_volume,
         start_game,
         unpause,
         quit,
@@ -94,6 +129,7 @@ pub const Menu = struct {
 
     pub const core_settings_menu: []const MenuItem = &.{
         .{ .label = "MASTER VOLUME", .left_event = .lower_master_volume, .right_event = .raise_master_volume },
+        .{ .label = "TEST VOLUME", .event = .test_volume },
     };
 
     pub const settings_menu: []const MenuItem = core_settings_menu ++ .{

@@ -9,8 +9,10 @@ pub const Enemy = struct {
     // is_merging: bool = false,
     body: Body,
     ai: AI,
+    next_basic_shot_at: f64 = basic_shot_cooldown,
 
     pub const hit_fade_duration = 0.2;
+    pub const basic_shot_cooldown = 6;
 
     pub fn init(
         body: Body,
@@ -24,6 +26,10 @@ pub const Enemy = struct {
             .body = body,
             .ai = .init(ai_type),
         };
+    }
+
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+        allocator.free(self.body.slots);
     }
 
     pub fn initRandom(game: *Game, value: usize) !@This() {
@@ -139,7 +145,6 @@ pub const Enemy = struct {
         }
 
         pub fn initRandom(game: *Game, value: usize) !@This() {
-            std.log.debug("randomizing enemy with {} value", .{value});
             const body_type_all_candidates = comptime brk: {
                 var bts: [std.enums.values(BodyType).len]BodyType = undefined;
                 for (std.enums.values(BodyType), 0..) |bt, i| {
@@ -161,27 +166,20 @@ pub const Enemy = struct {
             const body_type = filtered_candidates[body_type_i];
 
             const value_left = value - body_type.shardsDropped();
-            std.log.debug("body {t} picked, value left: {}", .{ body_type, value_left });
 
             const body = try Body.init(game.allocator, body_type);
             const potential_n_items = @min(body.slots.len, @divFloor(value_left, 20));
-            std.log.debug("potential_n_items: {}", .{potential_n_items});
 
             if (potential_n_items > 0) {
                 const n_items = if (potential_n_items == 1) 1 else game.random().intRangeLessThan(usize, 1, potential_n_items);
                 const item_value = value_left / n_items;
 
-                std.log.debug("n_items: {}", .{n_items});
-                std.log.debug("item_value: {}", .{item_value});
-
                 if (n_items > 0) {
                     body.slots[0] = .initRandom(game, item_value, .weapon);
-                    std.log.debug("item added with value: {}", .{body.slots[0].?.shardsDropped()});
 
                     for (1..n_items) |i| {
                         const item_type: std.meta.Tag(Game.C.Item.ItemType) = if (game.random().boolean()) .weapon else .body_mod;
                         body.slots[i] = .initRandom(game, item_value, item_type);
-                        std.log.debug("item added with value: {}", .{body.slots[i].?.shardsDropped()});
                     }
                 }
             }
@@ -257,6 +255,14 @@ pub const Enemy = struct {
                 };
             }
 
+            pub fn velocity(self: @This()) Game.Vector {
+                return switch (self) {
+                    .small => .init(0, 75),
+                    .medium => .init(0, 50),
+                    .large => .init(0, 25),
+                };
+            }
+
             pub fn offset(self: BodyType, slot_index: usize) Game.Vector {
                 return switch (self) {
                     .small => switch (slot_index) {
@@ -287,13 +293,13 @@ pub const Enemy = struct {
         ai_type: AIType,
 
         pub const AIType = union(enum) {
-            straight_line: AIStraightLine,
-            // follow_player,
+            state_machine: AIStateMachine,
 
             pub fn initRandom(game: *Game) @This() {
                 const tag = game.random().enumValue(std.meta.Tag(AIType));
+
                 return switch (tag) {
-                    inline else => |t| @unionInit(AIType, @tagName(t), .init()),
+                    inline else => |t| @unionInit(AIType, @tagName(t), .initRandom(game)),
                 };
             }
         };
@@ -302,21 +308,199 @@ pub const Enemy = struct {
             return .{ .ai_type = ai_type };
         }
 
-        pub fn update(self: *@This(), game: *Game) void {
-            switch (self.*) {
-                inline else => |*s| s.update(game),
+        pub fn update(self: *@This(), game: *Game, ctx: Game.EntityContext) void {
+            switch (self.ai_type) {
+                inline else => |*s| s.update(game, ctx),
             }
         }
 
-        pub const AIStraightLine = struct {
+        pub const AIStateMachine = struct {
+            state_machine: Game.C.StateMachine = .init(initialState),
+
             pub fn init() @This() {
                 return .{};
             }
 
-            pub fn update(self: *@This(), game: *Game) void {
-                _ = self;
-                _ = game;
+            pub fn initRandom(game: *Game) @This() {
+                return .{
+                    .state_machine = .init(randomStateMachine(game)),
+                };
+            }
+
+            pub fn initialState(ctx: Game.C.StateMachineContext) void {
+                _ = ctx;
+            }
+
+            pub fn update(self: *@This(), _: *Game, ctx: Game.EntityContext) void {
+                self.state_machine.state(.init(ctx, &self.state_machine));
             }
         };
     };
+};
+
+const AIStateMachineKey = enum {
+    straight_line,
+    zig_zag,
+    follow_player,
+    space_invader,
+};
+
+fn randomStateMachine(game: *Game) Game.C.StateFunction {
+    const key = game.random().enumValue(AIStateMachineKey);
+
+    return switch (key) {
+        .straight_line => AIStraightLine.initial,
+        .zig_zag => AIZigZag.initial,
+        .follow_player => AIFollowPlayer.initial,
+        .space_invader => AISpaceInvader.initial,
+    };
+}
+
+const AIStraightLine = struct {
+    pub fn initial(_: Game.C.StateMachineContext) void {}
+};
+
+const AIZigZag = struct {
+    pub const State = struct {
+        change_direction_at: f64 = 0,
+
+        pub const change_duration: f64 = 1;
+    };
+
+    pub fn initial(ctx: Game.C.StateMachineContext) void {
+        ctx.ctx.add(State{});
+        const body = ctx.ctx.get(Game.C.Body);
+        body.velocity.x = 25;
+        ctx.setState(left);
+        ctx.ctx.get(State).change_direction_at = ctx.elapsedTime() + State.change_duration / 2.0;
+    }
+
+    pub const left = struct {
+        pub fn pre(ctx: Game.C.StateMachineContext) void {
+            ctx.ctx.get(State).change_direction_at = ctx.elapsedTime() + State.change_duration;
+            const body = ctx.ctx.get(Game.C.Body);
+            body.velocity.x *= -1;
+        }
+
+        pub fn update(ctx: Game.C.StateMachineContext) void {
+            if (ctx.ctx.get(State).change_direction_at <= ctx.elapsedTime()) {
+                ctx.setState(right);
+            }
+        }
+    };
+
+    pub const right = struct {
+        pub fn pre(ctx: Game.C.StateMachineContext) void {
+            ctx.ctx.get(State).change_direction_at = ctx.elapsedTime() + State.change_duration;
+            const body = ctx.ctx.get(Game.C.Body);
+            body.velocity.x *= -1;
+        }
+
+        pub fn update(ctx: Game.C.StateMachineContext) void {
+            if (ctx.ctx.get(State).change_direction_at <= ctx.elapsedTime()) {
+                ctx.setState(left);
+            }
+        }
+    };
+};
+
+const AISpaceInvader = struct {
+    pub const State = struct {
+        entering_ends_at_y: f32 = 0,
+        entering_x_stop: ?f32 = null,
+        hover_ends_at: f64 = 0,
+    };
+
+    pub fn initial(ctx: Game.C.StateMachineContext) void {
+        ctx.ctx.add(State{});
+        ctx.setState(entering);
+    }
+
+    pub const entering = struct {
+        pub fn pre(ctx: Game.C.StateMachineContext) void {
+            ctx.ctx.get(State).entering_ends_at_y = 32;
+        }
+
+        pub fn update(ctx: Game.C.StateMachineContext) void {
+            const body = ctx.ctx.get(Game.C.Body);
+            const state = ctx.ctx.get(State);
+
+            if (state.entering_x_stop) |x_stop| {
+                if (body.velocity.x < 0) {
+                    if (body.position.x <= x_stop) {
+                        body.velocity.x = 0;
+                        state.entering_x_stop = null;
+                    }
+                } else if (body.position.x >= x_stop) {
+                    body.velocity.x = 0;
+                    state.entering_x_stop = null;
+                }
+            }
+
+            if (body.position.y >= state.entering_ends_at_y) {
+                if (collidesWithOtherEnemy(ctx.ctx)) {
+                    state.entering_ends_at_y += 32;
+
+                    if (state.entering_x_stop == null) {
+                        if (ctx.chance(0.33)) {
+                            state.entering_x_stop = body.position.x - 32;
+                            body.velocity.x = -64;
+                        } else if (ctx.chance(0.50)) {
+                            state.entering_x_stop = body.position.x + 32;
+                            body.velocity.x = 64;
+                        }
+                    }
+                } else {
+                    ctx.setState(hovering);
+                }
+            }
+        }
+    };
+
+    fn collidesWithOtherEnemy(ctx: Game.EntityContext) bool {
+        var it = ctx.game.entityIterator(.{ Game.C.Body, Game.C.Enemy }, .{});
+        const hitbox = ctx.game.hitbox(ctx);
+
+        while (it.next()) |other_ctx| {
+            if (ctx.equals(other_ctx)) continue;
+            const other_hitbox = ctx.game.hitbox(other_ctx);
+
+            if (hitbox.checkCollision(other_hitbox)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    pub const hovering = struct {
+        pub fn pre(ctx: Game.C.StateMachineContext) void {
+            ctx.ctx.get(State).hover_ends_at = ctx.elapsedTime() + 6;
+            const body = ctx.ctx.get(Game.C.Body);
+            body.velocity.y = 0;
+            body.velocity.x = 0;
+        }
+
+        pub fn update(ctx: Game.C.StateMachineContext) void {
+            if (ctx.ctx.get(State).hover_ends_at <= ctx.elapsedTime()) {
+                ctx.setState(fall_down);
+            }
+        }
+    };
+
+    pub const fall_down = struct {
+        pub fn pre(ctx: Game.C.StateMachineContext) void {
+            const enemy = ctx.ctx.get(Game.C.Enemy);
+            const body = ctx.ctx.get(Game.C.Body);
+            body.velocity = enemy.body.body_type.velocity().scale(1.5);
+        }
+
+        pub fn update(_: Game.C.StateMachineContext) void {}
+    };
+};
+
+const AIFollowPlayer = struct {
+    pub fn initial(ctx: Game.C.StateMachineContext) void {
+        _ = ctx;
+    }
 };

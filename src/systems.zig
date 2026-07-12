@@ -1,3 +1,4 @@
+pub const Animation = @import("systems/animation.zig").Animation;
 pub const Background = @import("systems/background.zig").Background;
 pub const Camera = @import("systems/camera.zig").Camera;
 pub const Controllable = @import("systems/controllable.zig").Controllable;
@@ -9,3 +10,4 @@ pub const Physics = @import("systems/physics.zig").Physics(.{ .enable_separate_a
 pub const Player = @import("systems/player.zig").Player;
 pub const RelativePosition = @import("systems/relative-position.zig").RelativePosition;
 pub const Shield = @import("systems/shield.zig").Shield;
+pub const StateMachine = @import("systems/state-machine.zig").StateMachine;

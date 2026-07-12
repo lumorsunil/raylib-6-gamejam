@@ -42,31 +42,38 @@ fn drawMenu(self: *Game) void {
 }
 
 fn drawMenuUI(self: *Game) void {
-    var cursor = self.worldSize();
-    const right_lane = cursor.x * 0.7;
-    cursor.x /= 2;
-    cursor.y *= 0.3;
-    cursor = cursor.add(self.worldPosition());
+    var cursor = Game.Menu.title_pos_rel;
+    cursor = self.getAbsolutePos(cursor);
     const title_font_size = 12;
-    const item_font_size = 9.0;
     drawTextCentered("MENU", .{}, title_font_size, cursor, .white);
     cursor.y += 12 + 24;
 
     for (self.menu.items, 0..) |item, i| {
-        const is_selected = if (i == self.menu.selected_item) "> " else "";
-        drawTextCentered("{s}{s}", .{ is_selected, item.label }, item_font_size, cursor, .white);
+        const is_selected = i == self.menu.selected_item;
+        const prefix = if (is_selected) "> " else "  ";
+        const rec = self.menu.menuItemRectangle(self, i);
+        const position = Game.Vector.init(rec.x + rec.width * 0.5, rec.y + rec.height * 0.5);
+        drawTextCentered(
+            "{s}{s}",
+            .{ prefix, item.label },
+            Game.Menu.item_font_size,
+            position,
+            .white,
+        );
         if (std.mem.eql(u8, item.label, "MASTER VOLUME")) {
-            drawVolume(self, .init(right_lane, cursor.y - item_font_size / 2.0));
+            drawVolume(self);
         }
+        const rec_color: Game.Color = if (is_selected) .white else .alpha(.white, 0.3);
+        rl.drawRectangleLinesEx(rec, 1, rec_color);
         cursor.y += 9 + 9;
     }
 }
 
-fn drawVolume(self: *Game, position: Game.Vector) void {
-    const size_x = 50;
-    rl.drawRectangleV(position, .init(size_x, 9), .dark_gray);
-    const perc_x = (self.settings.master_volume / Game.Settings.max_master_volume) * size_x;
-    rl.drawRectangleV(position, .init(perc_x, 9), .white);
+fn drawVolume(self: *Game) void {
+    var vol_rec = self.menu.masterVolumeRectangle(self);
+    rl.drawRectangleRec(vol_rec, .dark_gray);
+    vol_rec.width = (self.settings.master_volume / Game.Settings.max_master_volume) * vol_rec.width;
+    rl.drawRectangleRec(vol_rec, .white);
 }
 
 fn drawGameplay(self: *Game) void {
@@ -77,7 +84,7 @@ fn drawGameplay(self: *Game) void {
     // debugDraw(self);
     drawBorder(self);
     self.camera().end();
-    rl.drawFPS(8, 8);
+    // rl.drawFPS(8, 8);
 
     var ui_camera = self.camera().*;
     ui_camera.offset = .zero();
@@ -89,8 +96,9 @@ fn drawGameplay(self: *Game) void {
 }
 
 fn drawShop(self: *Game) void {
-    rl.clearBackground(.gray);
+    // rl.clearBackground(.gray);
     self.camera().begin();
+    self.initSprite(.init(820, 0, 204, 360)).draw(self.getAbsolutePos(.init(0.5, 0.5)), 1, 0);
     drawBorder(self);
 
     const flen: f32 = @floatFromInt(self.shop_state.items.len);
@@ -101,7 +109,7 @@ fn drawShop(self: *Game) void {
 
     const mouse_pos = rl.getScreenToWorld2D(rl.getMousePosition(), self.camera().*);
 
-    const selected_item = self.shop_state.selectedItem();
+    var selected_item = self.shop_state.selectedItem();
     const selected_item_cost = selected_item.cost();
     const can_afford = selected_item_cost <= player_component.shards;
     drawSkipButton(self);
@@ -113,14 +121,14 @@ fn drawShop(self: *Game) void {
             self.modification();
         } else if (can_afford and rl.checkCollisionPointRec(mouse_pos, buyButtonRec(self, selected_item_cost))) {
             player_component.shards -= selected_item_cost;
+            selected_item.owner = player;
             _ = player_component.inventory.appendItem(selected_item);
             self.playSound(.menu_accept);
             self.modification();
         }
     }
 
-    drawItemDescription(self, selected_item);
-
+    var item_description_rendered = false;
     for (self.shop_state.items, 0..) |item, i| {
         const empty_slot_renderable = Game.C.Item.emptySlotRenderable(self);
         const item_renderable = item.sprite(self);
@@ -132,7 +140,7 @@ fn drawShop(self: *Game) void {
         const cost = item.cost();
         const shard_position = abs_pos.add(.init(0, item_size.y + 8));
         const cost_color: Game.Color = if (cost > player_component.shards) .red else .white;
-        drawShardCounter(self, shard_position, cost, 12, .black, cost_color);
+        drawShardCounter(self, shard_position, cost, 12, .alpha(.black, 0), cost_color);
 
         cursor.x += x_step;
 
@@ -143,12 +151,17 @@ fn drawShop(self: *Game) void {
 
         if (empty_slot_renderable.containsPoint(abs_pos, mouse_pos, 1, 0)) {
             drawItemDescription(self, item);
+            item_description_rendered = true;
 
             if (rl.isMouseButtonPressed(.left)) {
                 self.playSound(.menu_select);
                 self.shop_state.selected_item = i;
             }
         }
+    }
+
+    if (!item_description_rendered) {
+        drawItemDescription(self, selected_item);
     }
 
     const player_shard_position = self.getAbsolutePos(.init(0.5, 0.85));
@@ -242,19 +255,20 @@ fn drawBuyButton(self: *Game, cost: usize, can_afford: bool) void {
 }
 
 fn drawItemDescription(self: *Game, item: Game.C.Item) void {
-    const tl = self.getAbsolutePos(.init(0.1, 0.05));
-    const br = self.getAbsolutePos(.init(0.9, 0.45));
-    const size = br.subtract(tl);
+    const tl = self.getAbsolutePos(.init(0.2, 0.15));
+    // const br = self.getAbsolutePos(.init(0.9, 0.45));
+    // const size = br.subtract(tl);
 
-    rl.drawRectangleV(tl, size, .black);
+    // rl.drawRectangleV(tl, size, .black);
 
     drawText("{f}", .{item}, 8, tl.add(.init(3, 3)), .white);
 }
 
 fn drawModification(self: *Game) void {
-    rl.clearBackground(.gray);
+    // rl.clearBackground(.gray);
     self.camera().begin();
     drawBorder(self);
+    self.initSprite(.init(820, 0, 204, 360)).draw(self.getAbsolutePos(.init(0.5, 0.5)), 1, 0);
 
     if (self.modification_state.selectedItem()) |item| {
         drawItemDescription(self, item);
@@ -272,7 +286,7 @@ fn drawModificationShip(self: *Game) void {
     const br = self.getAbsolutePos(.init(0.9, 0.65));
     const size = br.subtract(tl);
 
-    rl.drawRectangleV(tl, size, .black);
+    // rl.drawRectangleV(tl, size, .black);
 
     const player = self.player();
     const player_component = player.get(Game.C.Player);
@@ -357,13 +371,13 @@ fn drawModificationShip(self: *Game) void {
 
 fn drawInventory(self: *Game) void {
     const tl = self.getAbsolutePos(.init(0.1, 0.70));
-    const br = self.getAbsolutePos(.init(0.9, 0.85));
-    const size = br.subtract(tl);
+    // const br = self.getAbsolutePos(.init(0.9, 0.85));
+    // const size = br.subtract(tl);
 
     const player = self.player();
     const player_component = player.get(Game.C.Player);
 
-    rl.drawRectangleV(tl, size, .black);
+    // rl.drawRectangleV(tl, size, .black);
 
     const empty_slot = Game.C.Item.emptySlotRenderable(self);
 
@@ -554,7 +568,21 @@ fn drawNextLevelButton(self: *Game) void {
 }
 
 fn drawEnding(self: *Game) void {
-    _ = self;
+    drawGameOver(self);
+    drawFadeOverlay(self);
+
+    var ui_camera = self.camera().*;
+    ui_camera.offset = .zero();
+    ui_camera.target = .zero();
+    ui_camera.begin();
+
+    var cursor = self.getAbsolutePos(.init(0.5, 0.5));
+    const font_size = 20;
+    drawTextCentered("CONGRATULATIONS", .{}, font_size, cursor, .white);
+    cursor.y += font_size * 1.5;
+    drawTextCentered("YOU WIN!", .{}, font_size, cursor, .white);
+
+    ui_camera.end();
 }
 
 fn drawGameOver(self: *Game) void {
@@ -782,11 +810,21 @@ fn drawShield(
     if (ctx.tryGet(Game.C.Player)) |player| {
         var it = player.shieldIterator();
 
+        var has_shield_item = false;
         while (it.next()) |entry| {
+            has_shield_item = true;
             if (entry.shield.n_charges > 0) {
-                entry.shield.shieldSprite(self).draw(body.position, 1, 0);
+                if (player.shield_animation.isDone()) {
+                    entry.shield.shieldSprite(self).draw(body.position, 1, 0);
+                } else {
+                    player.shield_animation.currentFrame().draw(body.position, 1, 0);
+                }
                 return;
             }
+        }
+
+        if (has_shield_item and !player.shield_animation.isDone()) {
+            player.shield_animation.currentFrame().draw(body.position, 1, 0);
         }
     }
 
@@ -827,8 +865,7 @@ fn drawHUD(self: *Game) void {
     // var position = self.worldCenterTop();
     // position.y += 16;
     // drawTextCentered("LIVES={} SHARDS={}", .{ lives, shards }, 16, position, .white);
-    var lives_renderable = self.initSprite(.init(76, 84, 5, 11));
-    lives_renderable.sprite.tint = .red;
+    const lives_renderable = self.initSprite(.init(186, 39, 8, 7));
 
     var cursor = self.worldTopLeft().add(lives_renderable.size(1, 0));
 
@@ -837,7 +874,20 @@ fn drawHUD(self: *Game) void {
         cursor.x += lives_renderable.size(1, 0).x + 4;
     }
 
+    const shard_renderable = Game.C.Shard.Type.small.renderable(self);
+    cursor = self.getAbsolutePos(.init(0.8, 0));
+    cursor.y += lives_renderable.size(1, 0).y;
+    shard_renderable.draw(cursor, 2, std.math.pi / 4.0);
+    cursor.x += shard_renderable.size(2, 0).x;
+    cursor.y -= 2;
+    // drawTextCentered("X", .{}, 6, cursor, .white);
+    // cursor.x += 8;
+    cursor.y -= 3;
+    drawText("{}", .{player_component.shards}, 6, cursor, .white);
+
     const enemy_system = self.getSingleton(Game.S.Enemy);
+    if (enemy_system.current_stage_index == 0) return;
     cursor = self.worldCenterTop();
-    drawText("STAGE {}", .{enemy_system.current_stage_index}, 10, cursor, .white);
+    cursor.y += 8;
+    drawTextCentered("STAGE {}", .{enemy_system.current_stage_index}, 10, cursor, .white);
 }

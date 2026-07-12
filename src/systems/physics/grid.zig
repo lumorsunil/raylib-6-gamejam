@@ -156,10 +156,6 @@ pub fn Grid(comptime Cell: type, comptime options: GridOptions(Cell)) type {
 
                         const correction = if (@abs(d_min) < @abs(d_max)) -d_min else d_max;
 
-                        std.log.debug("hitbox: {f}", .{hitbox});
-                        std.log.debug("candidates: {f}", .{candidates});
-                        std.log.debug("correction ({t}): {}", .{ axis, correction });
-
                         addToVectorComponent(&body.position, correction, axis);
                         roundVectorComponent(&body.position, axis);
                     }

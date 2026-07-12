@@ -21,6 +21,7 @@ pub const Player = struct {
         updateWeapons(game, player, player_component);
         destroyOutOfBoundsProjectiles(game);
         pickupShards(game, player, player_component);
+        updateAnimations(game, player_component);
     }
 
     fn updateDeath(
@@ -238,5 +239,9 @@ pub const Player = struct {
 
             body.velocity = player_body.position.subtract(body.position).normalize().scale(hoover_speed);
         }
+    }
+
+    fn updateAnimations(game: *Game, player_component: *Game.C.Player) void {
+        player_component.shield_animation.update(game.elapsedTime());
     }
 };

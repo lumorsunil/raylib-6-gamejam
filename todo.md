@@ -29,47 +29,25 @@
   - [-] shield
     - [-] graphics
       - [x] icon
-      - [-] shield
+      - [x] shield
       - [ ] hit
-      - [ ] depletion
-      - [ ] recharge
+      - [x] depletion
+      - [x] recharge
     - [x] data
     - [x] functionality
-
-## mvp
-
-- [ ] enemies
+- [x] enemies
   - [x] randomized enemies
     - [x] point system that
       - [x] determines what mods and AI etc to add to the enemy
       - [x] as level increases, so does the max points for enemies
-      - [ ] points should also determine size of waves
     - [x] randomized items
     - [x] debuff weapon mod merged with every weapon of enemies (rate of fire -~50%)
     - [x] different body types with different number of slots
-    - [ ] different AI types
+    - [x] different AI types
       - [x] straight line
-      - [ ] simple pattern
-      - [ ] follow player
-  - [ ] balance waves
-- [ ] bugs/small fixes
-  - [x] remove entities below bottom of the screen (except for player)
-  - [x] when advancing to the next level, remove all enemies and enemy projectiles
-  - [ ] shop needs to properly randomize available items
-  - [ ] enemy projectiles are too fast (maybe something wrong with the projectile speed mod)
-- [ ] ending screen
-  - [ ] after 3 stages you win
-- [ ] gameplay
-  - [ ] touch support
-- [ ] menu
-  - [ ] ui design
-  - [ ] mouse/touch support
-- [ ] HUD
-  - [ ] coin counter
-  - [x] stage counter
-- [ ] music
-  - [ ] stage music
-  - [ ] shop/inventory music
+      - [x] simple pattern
+      - [x] space invaders
+  - [x] balance waves
 - [x] sound effects
   - [x] unique for each weapon
   - [x] shield recharge
@@ -82,9 +60,33 @@
     - [x] item merge
     - [x] cancel
     - [x] accept
+- [x] gameplay
+  - [x] touch support
+- [x] menu
+  - [x] ui design
+  - [x] mouse support
+  - [x] touch support
+- [x] HUD
+  - [x] coin counter
+  - [x] stage counter
+- [x] shop
+  - [x] ui design
+- [x] inventory
+  - [x] ui design
+- [x] ending screen
+  - [x] after 3 stages you win
+- [x] music
+  - [x] stage music
+  - [x] shop/inventory music
+- [x] bugs/small fixes
+  - [x] remove entities below bottom of the screen (except for player)
+  - [x] when advancing to the next level, remove all enemies and enemy projectiles
+  - [x] shop needs to properly randomize available items
+  - [x] enemy projectiles are too fast (maybe something wrong with the projectile speed mod)
 
 ## nice-to-haves
 
+- [x] when enemies are hit, add a little knockback
 - [ ] weapons
   - [ ] scatter shot
     - [ ] graphics
@@ -116,3 +118,5 @@
     - [ ] follow path
 - [ ] implement boss
 - [ ] memory leak fix for stages
+- [ ] screen transitions
+  - [ ] stage completed

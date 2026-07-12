@@ -1,4 +1,6 @@
+const std = @import("std");
 const Game = @import("game.zig").Game;
+const rl = @import("raylib");
 
 pub fn update(self: *Game) void {
     updateCoreBeforeMain(self);
@@ -7,6 +9,7 @@ pub fn update(self: *Game) void {
 }
 
 fn updateCoreBeforeMain(self: *Game) void {
+    self.updateMusic();
     self.input().update();
 }
 
@@ -43,6 +46,7 @@ fn updateLogo(self: *Game) void {
 fn updateMenu(self: *Game) void {
     const input = self.input();
 
+    // Keyboard
     if (input.isPressed(.move_down)) {
         self.menu.moveDown();
     }
@@ -58,6 +62,44 @@ fn updateMenu(self: *Game) void {
     if (input.isPressed(.shoot) or input.isPressed(.start)) {
         self.menu.execute(self);
     }
+
+    // Mouse
+    const mouse_pos = rl.getScreenToWorld2D(rl.getMousePosition(), self.camera().*);
+
+    for (0..self.menu.items.len) |i| {
+        const item_rec = self.menu.menuItemRectangle(self, i);
+        if (rl.checkCollisionPointRec(mouse_pos, item_rec)) {
+            self.menu.selected_item = i;
+
+            if (rl.isMouseButtonPressed(.left)) {
+                self.menu.execute(self);
+            }
+
+            return;
+        }
+    }
+
+    if (self.menu.isMenu(Game.Menu.settings_menu) or self.menu.isMenu(Game.Menu.pause_settings_menu)) {
+        const vol_rec = self.menu.masterVolumeRectangle(self);
+
+        if (self.settings.is_editing_master_volume or (mouse_pos.y >= vol_rec.y and mouse_pos.y <= vol_rec.y + vol_rec.height)) {
+            const ratio = ((mouse_pos.x - vol_rec.x) / vol_rec.width) * Game.Settings.max_master_volume;
+
+            if (ratio >= 0 and ratio <= Game.Settings.max_master_volume) {
+                if (rl.isMouseButtonDown(.left) and self.settings.is_editing_master_volume) {
+                    self.settings.setMasterVolume(ratio);
+                }
+
+                if (rl.isMouseButtonPressed(.left)) {
+                    self.settings.is_editing_master_volume = true;
+                }
+            }
+        }
+
+        if (rl.isMouseButtonReleased(.left)) {
+            self.settings.is_editing_master_volume = false;
+        }
+    }
 }
 
 fn updateGameplay(self: *Game) void {
@@ -65,7 +107,7 @@ fn updateGameplay(self: *Game) void {
     background.update(self);
 
     const input = self.input();
-    if (input.isPressed(.start)) {
+    if (input.isPressed(.start) or input.isPressed(.cancel)) {
         self.menu.handleEvent(self, .{ .set_menu = .pause });
         self.screen_state = .menu;
         return;
@@ -84,6 +126,12 @@ fn updateGameplay(self: *Game) void {
     player.update(self);
     const enemy = self.getSingleton(Game.S.Enemy);
     enemy.update(self);
+
+    const animation = self.getSingleton(Game.S.Animation);
+    animation.update(self);
+
+    const state_machine = self.getSingleton(Game.S.StateMachine);
+    state_machine.update(self);
 }
 
 fn updateShop(self: *Game) void {
@@ -95,7 +143,9 @@ fn updateModification(self: *Game) void {
 }
 
 fn updateEnding(self: *Game) void {
-    _ = self;
+    if (self.ending_state.ending_ends_at <= self.elapsedTime()) {
+        self.restart();
+    }
 }
 
 fn updateGameOver(self: *Game) void {

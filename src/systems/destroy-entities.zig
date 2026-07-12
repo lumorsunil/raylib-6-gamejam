@@ -23,10 +23,21 @@ pub const DestroyEntities = struct {
         for (0..self.n_entities_to_destroy) |i| {
             const entity = self.entities_to_destroy[i];
             if (!game.reg.valid(entity)) continue;
+            freeStuff(game, entity);
             game.reg.destroy(entity);
         }
 
         self.n_entities_to_destroy = 0;
+    }
+
+    fn freeStuff(game: *Game, entity: ecs.Entity) void {
+        const ctx = Game.EntityContext.init(game, entity);
+        if (ctx.tryGet(Game.C.Enemy)) |enemy| {
+            enemy.deinit(game.allocator);
+        }
+        if (ctx.tryGet(Game.C.Player)) |player| {
+            player.deinit(game.allocator);
+        }
     }
 
     pub fn destroy(self: *DestroyEntities, entity: ecs.Entity) void {

@@ -4,8 +4,10 @@ const Game = @import("../game.zig").Game;
 pub const Item = struct {
     item_type: ItemType,
     tier: usize = 0,
+    owner: ?Game.EntityContext = null,
 
     pub const weapon_machine_gun: Item = .init(.initWeapon(.init(.initMachineGun(0))));
+    pub const weapon_scatter_shot: Item = .init(.initWeapon(.init(.initScatterShot(0))));
     pub const weapon_mod_damage: Item = .init(.initWeaponMod(.init(.initDamage())));
     pub const body_mod_shield: Item = .init(.initBodyMod(.init(.initShield(0))));
 
@@ -22,8 +24,8 @@ pub const Item = struct {
 
         return switch (item_type) {
             .weapon => initRandomWeapon(game, tier),
+            .weapon_mod => initRandomWeaponMod(game),
             .body_mod => initRandomBodyMod(game, tier),
-            else => unreachable,
         };
     }
 
@@ -34,6 +36,13 @@ pub const Item = struct {
         }) });
         item.tier = tier;
         return item;
+    }
+
+    pub fn initRandomWeaponMod(game: *Game) @This() {
+        const weapon_mod_type = game.random().enumValue(std.meta.Tag(WeaponModType));
+        return .init(.{ .weapon_mod = .init(switch (weapon_mod_type) {
+            inline else => |t| @unionInit(WeaponModType, @tagName(t), .init()),
+        }) });
     }
 
     pub fn initRandomBodyMod(game: *Game, tier: usize) @This() {
@@ -182,9 +191,9 @@ pub const Item = struct {
             context: anytype,
             onSpawnProjectile: *const fn (@TypeOf(context), Game.EntityContext) void,
         ) void {
-            std.log.debug("shooting, cd: {}s , roff: {}", .{ self.shoot_cooldown, self.weapon_type.machine_gun.rate_of_fire_factor });
-            self.next_shoot_at = game.elapsedTime() + self.shoot_cooldown;
-            switch (self.weapon_type) {
+            var modded_weapon = self.applyMods();
+            self.next_shoot_at = game.elapsedTime() + modded_weapon.weapon_type.cooldown();
+            switch (modded_weapon.weapon_type) {
                 inline else => |*s| s.shoot(game, item, position, context, onSpawnProjectile),
             }
         }
@@ -216,12 +225,16 @@ pub const Item = struct {
 
     pub const WeaponType = union(enum) {
         machine_gun: WeaponMachineGun,
-        // scatter_shot,
+        scatter_shot: WeaponScatterShot,
         // railgun,
         // cluster_bomb,
 
         pub fn initMachineGun(tier: usize) @This() {
             return .{ .machine_gun = .init(tier) };
+        }
+
+        pub fn initScatterShot(tier: usize) @This() {
+            return .{ .scatter_shot = .init(tier) };
         }
 
         pub fn cost(self: @This()) usize {
@@ -372,7 +385,172 @@ pub const Item = struct {
             game.playSound(.machine_gun);
             switch (item.tier) {
                 0 => self.machineGunShootOne(game, item.*, position, context, onSpawnProjectile),
+                1 => self.machineGunShootOne(game, item.*, position, context, onSpawnProjectile),
+                2 => self.machineGunShootOne(game, item.*, position, context, onSpawnProjectile),
                 else => self.machineGunShootTwo(game, item.*, position, context, onSpawnProjectile),
+            }
+        }
+
+        pub fn format(
+            self: @This(),
+            writer: *std.Io.Writer,
+        ) std.Io.Writer.Error!void {
+            return writer.print("Weapon: Machine Gun\n\nDamage {d:.2}", .{self.damage()});
+        }
+    };
+
+    pub const WeaponScatterShot = struct {
+        n_projectiles: usize = 1,
+        shoot_cooldown: f64 = 0.35,
+        base_damage: f32 = 1,
+        damage_factor: f32 = 1,
+        rate_of_fire_factor: f32 = 1,
+        projectile_speed_factor: f32 = 1,
+        shop_cost: usize = 50,
+
+        pub fn init(tier: usize) @This() {
+            return switch (tier) {
+                0 => .{
+                    .n_projectiles = 1,
+                    .shoot_cooldown = 0.35,
+                    .base_damage = 1,
+                    .damage_factor = 1,
+                    .rate_of_fire_factor = 1,
+                    .projectile_speed_factor = 1,
+                    .shop_cost = 50,
+                },
+                1 => .{
+                    .n_projectiles = 1,
+                    .shoot_cooldown = 0.30,
+                    .base_damage = 2,
+                    .damage_factor = 1,
+                    .rate_of_fire_factor = 1,
+                    .projectile_speed_factor = 1,
+                    .shop_cost = 100,
+                },
+                2 => .{
+                    .n_projectiles = 1,
+                    .shoot_cooldown = 0.25,
+                    .base_damage = 3,
+                    .damage_factor = 1,
+                    .rate_of_fire_factor = 1,
+                    .projectile_speed_factor = 1,
+                    .shop_cost = 150,
+                },
+                else => unreachable,
+            };
+        }
+
+        pub fn damage(self: @This()) f32 {
+            return self.base_damage * self.damage_factor;
+        }
+
+        pub fn cost(self: @This()) usize {
+            return self.shop_cost;
+        }
+
+        pub fn cooldown(self: @This()) f64 {
+            return self.shoot_cooldown / self.rate_of_fire_factor;
+        }
+
+        pub fn sprite(_: @This(), game: *Game, item: Item) Game.C.Renderable {
+            return switch (item.tier) {
+                0 => game.initSprite(.init(173, 227, 17, 19)),
+                1 => game.initSprite(.init(197, 227, 17, 19)),
+                2 => game.initSprite(.init(226, 227, 17, 19)),
+                else => unreachable,
+            };
+        }
+
+        pub fn projectileSprite(_: @This(), game: *Game, item: Item) Game.C.Renderable {
+            return switch (item.tier) {
+                0 => game.initSprite(.init(121, 160, 1, 8)),
+                1 => game.initSprite(.init(138, 160, 3, 8)),
+                2 => game.initSprite(.init(155, 160, 5, 11)),
+                else => unreachable,
+            };
+        }
+
+        fn projectileVelocity(self: @This()) Game.Vector {
+            return .init(0, -500 * self.projectile_speed_factor);
+        }
+
+        fn scatterShotShootOne(
+            self: @This(),
+            game: *Game,
+            item: Item,
+            position: Game.Vector,
+            context: anytype,
+            onSpawnProjectile: *const fn (@TypeOf(context), Game.EntityContext) void,
+        ) void {
+            const offset = Game.Vector.init(0, -4);
+            const velocity = self.projectileVelocity();
+            const left = spawnProjectile(
+                game,
+                position.add(offset),
+                velocity,
+                self.projectileSprite(game, item),
+                context,
+                onSpawnProjectile,
+            );
+            const left_body = left.get(Game.C.Body);
+            left_body.rotation += std.math.pi / 4.0;
+            left_body.velocity = left_body.velocity.rotate(std.math.pi / 4.0);
+            _ = spawnProjectile(
+                game,
+                position.add(offset),
+                velocity,
+                self.projectileSprite(game, item),
+                context,
+                onSpawnProjectile,
+            );
+            const right = spawnProjectile(
+                game,
+                position.add(offset),
+                velocity,
+                self.projectileSprite(game, item),
+                context,
+                onSpawnProjectile,
+            );
+            const right_body = right.get(Game.C.Body);
+            right_body.rotation -= std.math.pi / 4.0;
+            right_body.velocity = right_body.velocity.rotate(std.math.pi / -4.0);
+        }
+
+        fn scattershotShootTwo(
+            self: @This(),
+            game: *Game,
+            item: Item,
+            position: Game.Vector,
+            context: anytype,
+            onSpawnProjectile: *const fn (@TypeOf(context), Game.EntityContext) void,
+        ) void {
+            const sprite_ = self.projectileSprite(game, item);
+            const velocity = self.projectileVelocity();
+
+            var cursor = position;
+            const space_between = sprite_.size(1, 0).x + 8;
+            cursor.x -= space_between / 2.0;
+            _ = spawnProjectile(game, cursor, velocity, sprite_, context, onSpawnProjectile);
+
+            cursor.x += space_between;
+            _ = spawnProjectile(game, cursor, velocity, sprite_, context, onSpawnProjectile);
+        }
+
+        pub fn shoot(
+            self: *@This(),
+            game: *Game,
+            item: *Item,
+            position: Game.Vector,
+            context: anytype,
+            onSpawnProjectile: *const fn (@TypeOf(context), Game.EntityContext) void,
+        ) void {
+            game.playSound(.machine_gun);
+            switch (item.tier) {
+                0 => self.scatterShotShootOne(game, item.*, position, context, onSpawnProjectile),
+                1 => self.scatterShotShootOne(game, item.*, position, context, onSpawnProjectile),
+                2 => self.scatterShotShootOne(game, item.*, position, context, onSpawnProjectile),
+                else => self.scattershotShootTwo(game, item.*, position, context, onSpawnProjectile),
             }
         }
 

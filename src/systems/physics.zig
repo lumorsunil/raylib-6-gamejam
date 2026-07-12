@@ -34,6 +34,13 @@ pub fn Physics(comptime options: PhysicsOptions) type {
                 if (!body.enabled) continue;
 
                 body.velocity = body.velocity.add(body.acceleration.scale(game.deltaTime()));
+                const velocity_pre_knockback = body.velocity;
+                if (ctx.tryGet(Game.C.Knockback)) |knockback| {
+                    body.velocity = body.velocity.add(knockback.force.scale(game.deltaTime()));
+                    knockback.force = knockback.force.subtract(knockback.force.scale(3 * game.deltaTime()));
+                    if (knockback.force.length() <= 0.1) ctx.remove(Game.C.Knockback);
+                }
+
                 body.rotation += body.angular_velocity * game.deltaTime();
 
                 if (comptime options.enable_separate_axis_update) {
@@ -45,6 +52,8 @@ pub fn Physics(comptime options: PhysicsOptions) type {
                     self.updateAxis(game, body, &.{ .x, .y });
                     if (self.grid) |*grid| grid.resolveCollisions(game, ctx, body, &.{ .x, .y });
                 }
+
+                body.velocity = velocity_pre_knockback;
 
                 if (ctx.tryGet(Game.C.Shard)) |shard| {
                     if (shard.enable_drag) {

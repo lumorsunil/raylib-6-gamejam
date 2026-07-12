@@ -1,7 +1,9 @@
+const Game = @import("game.zig").Game;
 const rl = @import("raylib");
 
 pub const Settings = struct {
     master_volume: f32 = 0.05,
+    is_editing_master_volume: bool = false,
 
     pub const max_master_volume = 0.5;
     pub const min_master_volume = 0;
@@ -23,5 +25,9 @@ pub const Settings = struct {
 
     pub fn raiseMasterVolume(self: *Settings) void {
         self.setMasterVolume(self.master_volume + master_volume_step);
+    }
+
+    pub fn testVolume(_: *Settings, game: *Game) void {
+        game.playSound(.enemy_explosion);
     }
 };

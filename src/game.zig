@@ -4,17 +4,24 @@ const rl = @import("raylib");
 const emscripten = std.os.emscripten;
 const Sound = @import("sound.zig").Sound;
 const Sounds = @import("sound.zig").Sounds;
+const Music = @import("music.zig").Music;
+const Musics = @import("music.zig").Musics;
+const AnimationKey = @import("animation.zig").AnimationKey;
+const AnimationType = @import("animation.zig").AnimationType;
+const Animations = @import("animation.zig").Animations;
+const Animation = @import("animation.zig").Animation;
+const Ending = @import("ending.zig").Ending;
 
 const Mode = enum { dev, prod };
 
-const mode: Mode = .dev;
+const mode: Mode = .prod;
 
 pub const Game = struct {
     io: std.Io,
     allocator: std.mem.Allocator,
     reg: ecs.Registry,
     random_io: std.Random.IoSource,
-    screen_state: ScreenState = if (mode == .prod) .logo else .menu,
+    screen_state: ScreenState = if (mode == .prod) .logo else .logo,
     logo: Logo = .init(0),
     menu: Menu = .init(),
     settings: Settings = .init(),
@@ -22,6 +29,8 @@ pub const Game = struct {
     modification_state: ModificationState = .init(),
     game_over: GameOver = .init(0),
     wants_to_quit: bool = false,
+    ending_state: Ending = .init(),
+    current_music: ?rl.Music = null,
 
     pub const ScreenState = enum {
         logo,
@@ -264,6 +273,13 @@ pub const Game = struct {
             return self.game.reg.tryGetConst(T, self.entity);
         }
 
+        pub fn getOrAdd(self: EntityContext, comptime T: type) *T {
+            return self.tryGet(T) orelse brk: {
+                self.add(@as(T, undefined));
+                break :brk self.get(T);
+            };
+        }
+
         pub fn add(self: EntityContext, component: anytype) void {
             return self.game.reg.addOrReplace(self.entity, component);
         }
@@ -355,6 +371,7 @@ pub const Game = struct {
     }
 
     pub fn restart(self: *Game) void {
+        self.playMusic(.theme);
         self.menu.setMenu(Menu.main_menu);
         self.screen_state = .menu;
         self.destroyAllEntities();
@@ -376,6 +393,7 @@ pub const Game = struct {
 
     pub fn ending(self: *Game) void {
         self.screen_state = .ending;
+        self.ending_state.setup(self);
     }
 
     pub const OutOfBoundsRules = enum {
@@ -408,6 +426,7 @@ pub const Game = struct {
     };
 
     pub fn shop(self: *Game) void {
+        self.playMusic(.shop);
         self.screen_state = .shop;
         self.shop_state.setup(self) catch unreachable;
     }
@@ -422,14 +441,53 @@ pub const Game = struct {
         self.nextStage();
     }
 
+    pub fn unpause(self: *Game) void {
+        self.screen_state = .gameplay;
+    }
+
     pub fn nextStage(self: *Game) void {
         self.screen_state = .gameplay;
         const enemy_system = self.getSingleton(Game.S.Enemy);
         enemy_system.nextStage(self) catch unreachable;
+        switch (enemy_system.current_stage_index) {
+            1 => self.playMusic(.stage_1),
+            2 => self.playMusic(.stage_2),
+            3 => self.playMusic(.stage_3),
+            4 => self.playMusic(.stage_1),
+            5 => self.playMusic(.stage_2),
+            6 => self.playMusic(.stage_3),
+            7 => self.playMusic(.stage_1),
+            8 => self.playMusic(.stage_2),
+            9 => self.playMusic(.stage_3),
+            10 => self.playMusic(.stage_1),
+            11 => self.playMusic(.stage_2),
+            12 => self.playMusic(.stage_3),
+            else => {},
+        }
         enemy_system.setup(self);
 
         var it = self.entityIterator(.{Game.C.Body}, .{ Game.C.Player, Game.C.Background });
         while (it.next()) |ctx| ctx.destroy();
+    }
+
+    pub fn updateMusic(self: *Game) void {
+        const music = self.current_music orelse return;
+        rl.updateMusicStream(music);
+    }
+
+    pub fn getMusic(self: *Game, comptime music: Music) rl.Music {
+        const musics = self.getSingleton(Musics);
+        return @field(musics, @tagName(music));
+    }
+
+    pub fn playMusic(self: *Game, comptime music_key: Music) void {
+        const music = self.getMusic(music_key);
+        rl.playMusicStream(music);
+        self.current_music = music;
+    }
+
+    pub fn isMusicPlaying(self: *Game, comptime music: Music) bool {
+        return rl.isMusicStreamPlaying(self.getMusic(music));
     }
 
     pub fn getSound(self: *Game, comptime sound: Sound) rl.Sound {
@@ -443,5 +501,21 @@ pub const Game = struct {
 
     pub fn isSoundPlaying(self: *Game, comptime sound: Sound) bool {
         return rl.isSoundPlaying(self.getSound(sound));
+    }
+
+    pub fn getAnimation(self: *Game, comptime animation: AnimationKey) AnimationType {
+        const animations = self.getSingleton(Animations);
+        return @field(animations, @tagName(animation));
+    }
+
+    pub fn newAnimation(
+        self: *Game,
+        comptime animation_key: AnimationKey,
+        is_looping: bool,
+    ) Animation {
+        var animation: Animation = .init(self.getAnimation(animation_key));
+        animation.is_looping = is_looping;
+        animation.start(self.elapsedTime());
+        return animation;
     }
 };

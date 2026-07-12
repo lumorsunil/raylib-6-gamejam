@@ -27,7 +27,7 @@ pub const Shop = struct {
     }
 
     fn populateAvailableItems(self: *Shop, game: *Game) !void {
-        try self.debugPopulateAvailableItems(game.allocator);
+        try self.debugPopulateAvailableItems(game);
     }
 
     fn populatePurchasableItems(self: *Shop) void {
@@ -36,14 +36,16 @@ pub const Shop = struct {
         self.items[2] = self.available_body_mods.items[0];
     }
 
-    fn debugPopulateAvailableItems(self: *Shop, allocator: std.mem.Allocator) !void {
+    fn debugPopulateAvailableItems(self: *Shop, game: *Game) !void {
+        const allocator = game.allocator;
+
         self.available_weapons.clearRetainingCapacity();
         self.available_weapon_mods.clearRetainingCapacity();
         self.available_body_mods.clearRetainingCapacity();
 
-        try self.available_weapons.append(allocator, .weapon_machine_gun);
-        try self.available_weapon_mods.append(allocator, .weapon_mod_damage);
-        try self.available_body_mods.append(allocator, .body_mod_shield);
+        try self.available_weapons.append(allocator, .initRandom(game, 0, .weapon));
+        try self.available_weapon_mods.append(allocator, .initRandom(game, 0, .weapon_mod));
+        try self.available_body_mods.append(allocator, .initRandom(game, 0, .body_mod));
     }
 
     pub fn selectedItem(self: @This()) Game.C.Item {
