@@ -21,7 +21,7 @@ pub const Game = struct {
     allocator: std.mem.Allocator,
     reg: ecs.Registry,
     random_io: std.Random.IoSource,
-    screen_state: ScreenState = if (mode == .prod) .logo else .logo,
+    screen_state: ScreenState = if (mode == .prod) .menu else .menu,
     logo: Logo = .init(0),
     menu: Menu = .init(),
     settings: Settings = .init(),
@@ -31,6 +31,13 @@ pub const Game = struct {
     wants_to_quit: bool = false,
     ending_state: Ending = .init(),
     current_music: ?rl.Music = null,
+    elapsed_time: f64 = 0,
+    delta_time: f32 = 0,
+    physics_frames: usize = 0,
+    rem_time: f32 = 0,
+    is_paused: bool = false,
+
+    pub const max_physics_frames = 1;
 
     pub const ScreenState = enum {
         logo,
@@ -80,7 +87,7 @@ pub const Game = struct {
     pub fn run(self: *@This()) void {
         if (@import("builtin").cpu.arch.isWasm()) {
             emscripten_game_ptr = self;
-            emscripten.emscripten_set_main_loop(emscripten_loop, self.fps(), 1);
+            emscripten.emscripten_set_main_loop(emscripten_loop, 0, 1);
         } else {
             while (!rl.windowShouldClose() and !self.wants_to_quit) self.loop();
         }
@@ -113,11 +120,27 @@ pub const Game = struct {
         return 60;
     }
 
-    pub fn elapsedTime(_: @This()) f64 {
+    pub fn physicsFps(_: @This()) u8 {
+        return 60;
+    }
+
+    pub fn physicsTimeStep(self: @This()) f32 {
+        return 1.0 / @as(f32, self.physicsFps());
+    }
+
+    pub fn elapsedTime(self: @This()) f64 {
+        return self.elapsed_time;
+    }
+
+    pub fn elapsedRealTime(_: @This()) f64 {
         return rl.getTime();
     }
 
-    pub fn deltaTime(_: @This()) f32 {
+    pub fn deltaTime(self: @This()) f32 {
+        return self.delta_time;
+    }
+
+    pub fn deltaRealTime(_: @This()) f32 {
         return rl.getFrameTime();
     }
 
@@ -517,5 +540,29 @@ pub const Game = struct {
         animation.is_looping = is_looping;
         animation.start(self.elapsedTime());
         return animation;
+    }
+
+    pub fn pauseTime(self: *@This()) void {
+        self.is_paused = true;
+    }
+
+    pub fn unpauseTime(self: *@This()) void {
+        self.is_paused = false;
+    }
+
+    pub fn updateTime(self: *@This()) void {
+        if (self.is_paused) return;
+        const time_step = self.physicsTimeStep();
+        var dt = self.deltaRealTime();
+        const f_last_physics_frames: f32 = @floatFromInt(self.physics_frames);
+        self.elapsed_time += f_last_physics_frames * time_step;
+        const f_desired_physics_frames: f32 = @divFloor(dt + self.rem_time, time_step);
+        const f_physics_frames: f32 = @min(max_physics_frames, f_desired_physics_frames);
+        const physics_delta_time = f_physics_frames * time_step;
+        const f_desired_delta = f_desired_physics_frames - f_physics_frames;
+        dt -= f_desired_delta * time_step;
+        self.physics_frames = @intFromFloat(f_physics_frames);
+        self.rem_time -= physics_delta_time - dt;
+        self.delta_time = physics_delta_time;
     }
 };

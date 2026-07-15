@@ -36,6 +36,7 @@ fn initRaylib(self: *Game) void {
     const screen_size = self.screenSize();
     rl.initWindow(@intFromFloat(screen_size.x), @intFromFloat(screen_size.y), "Game Template");
     rl.initAudioDevice();
+    // rl.setAudioStreamBufferSizeDefault(4096);
     rl.setMasterVolume(self.settings.master_volume);
     rl.setExitKey(.null);
 

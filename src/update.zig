@@ -9,6 +9,7 @@ pub fn update(self: *Game) void {
 }
 
 fn updateCoreBeforeMain(self: *Game) void {
+    self.updateTime();
     self.updateMusic();
     self.input().update();
 }

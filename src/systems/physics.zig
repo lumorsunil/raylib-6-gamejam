@@ -28,63 +28,72 @@ pub fn Physics(comptime options: PhysicsOptions) type {
 
         pub fn update(self: *@This(), game: *Game) void {
             var it = game.entityIterator(.{Game.C.Body}, .{});
+            const time_step = game.physicsTimeStep();
 
-            while (it.next()) |ctx| {
-                const body = ctx.get(Game.C.Body);
-                if (!body.enabled) continue;
+            for (0..game.physics_frames) |_| {
+                it.reset();
+                while (it.next()) |ctx| {
+                    const body = ctx.get(Game.C.Body);
+                    if (!body.enabled) continue;
 
-                body.velocity = body.velocity.add(body.acceleration.scale(game.deltaTime()));
-                const velocity_pre_knockback = body.velocity;
-                if (ctx.tryGet(Game.C.Knockback)) |knockback| {
-                    body.velocity = body.velocity.add(knockback.force.scale(game.deltaTime()));
-                    knockback.force = knockback.force.subtract(knockback.force.scale(3 * game.deltaTime()));
-                    if (knockback.force.length() <= 0.1) ctx.remove(Game.C.Knockback);
-                }
-
-                body.rotation += body.angular_velocity * game.deltaTime();
-
-                if (comptime options.enable_separate_axis_update) {
-                    self.updateAxis(game, body, &.{.x});
-                    if (self.grid) |*grid| grid.resolveCollisions(game, ctx, body, &.{.x});
-                    self.updateAxis(game, body, &.{.y});
-                    if (self.grid) |*grid| grid.resolveCollisions(game, ctx, body, &.{.y});
-                } else {
-                    self.updateAxis(game, body, &.{ .x, .y });
-                    if (self.grid) |*grid| grid.resolveCollisions(game, ctx, body, &.{ .x, .y });
-                }
-
-                body.velocity = velocity_pre_knockback;
-
-                if (ctx.tryGet(Game.C.Shard)) |shard| {
-                    if (shard.enable_drag) {
-                        applyDrag(game, body);
+                    body.velocity = body.velocity.add(body.acceleration.scale(time_step));
+                    const velocity_pre_knockback = body.velocity;
+                    if (ctx.tryGet(Game.C.Knockback)) |knockback| {
+                        body.velocity = body.velocity.add(knockback.force.scale(time_step));
+                        knockback.force = knockback.force.subtract(knockback.force.scale(3 * time_step));
+                        if (knockback.force.length() <= 0.1) ctx.remove(Game.C.Knockback);
                     }
-                }
 
-                body.acceleration = .init(0, 0);
+                    body.rotation += body.angular_velocity * time_step;
+
+                    if (comptime options.enable_separate_axis_update) {
+                        self.updateAxis(body, &.{.x}, time_step);
+                        if (self.grid) |*grid| grid.resolveCollisions(game, ctx, body, &.{.x});
+                        self.updateAxis(body, &.{.y}, time_step);
+                        if (self.grid) |*grid| grid.resolveCollisions(game, ctx, body, &.{.y});
+                    } else {
+                        self.updateAxis(body, &.{ .x, .y }, time_step);
+                        if (self.grid) |*grid| grid.resolveCollisions(game, ctx, body, &.{ .x, .y });
+                    }
+
+                    body.velocity = velocity_pre_knockback;
+
+                    if (ctx.tryGet(Game.C.Shard)) |shard| {
+                        if (shard.enable_drag) {
+                            applyDrag(body, time_step);
+                        }
+                    }
+
+                    body.acceleration = .init(0, 0);
+                }
             }
         }
 
-        pub fn updateAxis(_: *@This(), game: *Game, body: *Game.C.Body, comptime axiis: []const Axis) void {
+        pub fn updateAxis(
+            _: *@This(),
+            body: *Game.C.Body,
+            comptime axiis: []const Axis,
+            time_step: f32,
+        ) void {
             inline for (comptime axiis) |axis| {
                 switch (comptime axis) {
                     .x => {
                         if (!body.lock_x) {
-                            body.position.x += body.velocity.x * game.deltaTime();
+                            body.position.x += body.velocity.x * time_step;
                         }
                     },
                     .y => {
                         if (!body.lock_y) {
-                            body.position.y += body.velocity.y * game.deltaTime();
+                            body.position.y += body.velocity.y * time_step;
                         }
                     },
                 }
             }
         }
 
-        fn applyDrag(game: *Game, body: *Game.C.Body) void {
-            body.velocity = body.velocity.subtract(body.velocity.scale(3 * game.deltaTime()));
-            body.angular_velocity -= body.angular_velocity * 3 * game.deltaTime();
+        fn applyDrag(body: *Game.C.Body, time_step: f32) void {
+            body.velocity = body.velocity.subtract(body.velocity.scale(3 * time_step));
+            body.angular_velocity -= body.angular_velocity * 3 * time_step;
         }
     };
 }
