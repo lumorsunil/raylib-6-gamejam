@@ -3,18 +3,27 @@ const Game = @import("game.zig").Game;
 const rl = @import("raylib");
 
 pub fn update(self: *Game) void {
+    const zone = Game.tracyZoneNC(@src(), @src().fn_name, .red);
+    defer zone.end();
+
     updateCoreBeforeMain(self);
     updateMain(self);
     updateCoreAfterMain(self);
 }
 
 fn updateCoreBeforeMain(self: *Game) void {
+    const zone = Game.tracyZoneN(@src(), @src().fn_name);
+    defer zone.end();
+
     self.updateTime();
     self.updateMusic();
     self.input().update();
 }
 
 fn updateMain(self: *Game) void {
+    const zone = Game.tracyZoneN(@src(), @src().fn_name);
+    defer zone.end();
+
     switch (self.screen_state) {
         .logo => updateLogo(self),
         .menu => updateMenu(self),
@@ -23,13 +32,21 @@ fn updateMain(self: *Game) void {
         .modification => updateModification(self),
         .ending => updateEnding(self),
         .game_over => updateGameOver(self),
+        .debug => updateDebug(self),
     }
 }
 
 fn updateCoreAfterMain(self: *Game) void {
+    const zone = Game.tracyZoneN(@src(), @src().fn_name);
+    defer zone.end();
+
     const relative_position = self.getSingleton(Game.S.RelativePosition);
     relative_position.update(self);
     self.cameraSystem().update(self);
+    const scale_gradient = self.getSingleton(Game.S.ScaleGradient);
+    scale_gradient.update(self);
+    const fade_gradient = self.getSingleton(Game.S.FadeGradient);
+    fade_gradient.update(self);
     self.destroyEntitiesSystem().update(self);
 }
 
@@ -104,6 +121,9 @@ fn updateMenu(self: *Game) void {
 }
 
 fn updateGameplay(self: *Game) void {
+    const zone = Game.tracyZoneN(@src(), @src().fn_name);
+    defer zone.end();
+
     const background = self.getSingleton(Game.S.Background);
     background.update(self);
 
@@ -125,8 +145,11 @@ fn updateGameplay(self: *Game) void {
 
     const player = self.getSingleton(Game.S.Player);
     player.update(self);
-    const enemy = self.getSingleton(Game.S.Enemy);
-    enemy.update(self);
+
+    if (self.screen_state != .debug) {
+        const enemy = self.getSingleton(Game.S.Enemy);
+        enemy.update(self);
+    }
 
     const animation = self.getSingleton(Game.S.Animation);
     animation.update(self);
@@ -153,4 +176,8 @@ fn updateGameOver(self: *Game) void {
     if (self.game_over.transition_at <= self.elapsedTime()) {
         self.restart();
     }
+}
+
+fn updateDebug(self: *Game) void {
+    updateGameplay(self);
 }

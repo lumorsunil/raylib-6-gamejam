@@ -1,5 +1,6 @@
 const std = @import("std");
 const Game = @import("../game.zig").Game;
+const rl = @import("raylib");
 
 pub const Player = struct {
     spawned_explosion: bool = false,
@@ -9,6 +10,9 @@ pub const Player = struct {
     }
 
     pub fn update(self: *Player, game: *Game) void {
+        const zone = Game.tracyZoneN(@src(), @typeName(@This()) ++ "." ++ @src().fn_name);
+        defer zone.end();
+
         const player = game.player();
         const player_component = player.get(Game.C.Player);
 
@@ -32,7 +36,7 @@ pub const Player = struct {
     ) void {
         if (player_component.destroyed_at) |destroyed_at| {
             if (!self.spawned_explosion) {
-                spawnExplosion(game, player.getConst(Game.C.Body).position);
+                spawnExplosion(game, player.getConst(Game.C.Body).position());
                 self.spawned_explosion = true;
             }
 
@@ -41,8 +45,8 @@ pub const Player = struct {
                 player_component.destroyed_at = null;
                 self.spawned_explosion = false;
                 const body = player.get(Game.C.Body);
-                body.position = game.worldCenterBottom();
-                body.velocity = .init(0, 0);
+                body.setPosition(game.worldCenterBottom());
+                body.setVelocity(.init(0, 0));
             } else {
                 return;
             }
@@ -81,7 +85,7 @@ pub const Player = struct {
         if (weapon.item_type.weapon.next_shoot_at <= game.elapsedTime()) {
             const body = player.getConst(Game.C.Body);
             const offset = player_component.body.gameplayOffset(game, slot_index);
-            const position = body.position.add(offset);
+            const position = body.position().add(offset);
             weapon.item_type.weapon.shoot(game, weapon, position, player, onSpawnProjectile);
         }
     }
@@ -116,10 +120,10 @@ pub const Player = struct {
         const max_bounds = world_pos.add(world_size);
         const half_size_x = hitbox.size().x * 0.5;
         const half_size_y = hitbox.size().y * 0.5;
-        if (hitbox.left() < min_bounds.x) body.position.x = min_bounds.x + half_size_x;
-        if (hitbox.right() > max_bounds.x) body.position.x = max_bounds.x - half_size_x;
-        if (hitbox.top() < min_bounds.y) body.position.y = min_bounds.y + half_size_y;
-        if (hitbox.bottom() > max_bounds.y) body.position.y = max_bounds.y - half_size_y;
+        if (hitbox.left() < min_bounds.x) body.setPositionX(min_bounds.x + half_size_x);
+        if (hitbox.right() > max_bounds.x) body.setPositionX(max_bounds.x - half_size_x);
+        if (hitbox.top() < min_bounds.y) body.setPositionY(min_bounds.y + half_size_y);
+        if (hitbox.bottom() > max_bounds.y) body.setPositionY(max_bounds.y - half_size_y);
     }
 
     fn destroyOutOfBoundsProjectiles(game: *Game) void {
@@ -139,7 +143,7 @@ pub const Player = struct {
         const shard_duration = 0.6;
 
         const center_ctx = game.createEntity();
-        center_ctx.add(Game.C.Body.init(position));
+        _ = center_ctx.addBody(position);
         center_ctx.add(game.initSprite(.init(47, 74, 17, 31)));
         center_ctx.add(Game.C.ScaleGradient.init(center_scale_per_second));
         center_ctx.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
@@ -148,27 +152,24 @@ pub const Player = struct {
         const shard_size = Game.Vector.init(5, 6);
 
         const shard_0 = game.createEntity();
-        shard_0.add(Game.C.Body.init(position));
-        var shard_body = shard_0.get(Game.C.Body);
-        shard_body.velocity = Game.Vector.init(shard_speed, 0).rotate(std.math.pi / 2.0 + std.math.pi / 4.0).multiply(.init(1, -1));
+        var shard_body = shard_0.addBody(position);
+        shard_body.setVelocity(Game.Vector.init(shard_speed, 0).rotate(std.math.pi / 2.0 + std.math.pi / 4.0).multiply(.init(1, -1)));
         shard_0.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
         cursor.x += 5;
         shard_0.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
         shard_0.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
 
         const shard_1 = game.createEntity();
-        shard_1.add(Game.C.Body.init(position));
-        shard_body = shard_1.get(Game.C.Body);
-        shard_body.velocity = Game.Vector.init(0, -shard_speed);
+        shard_body = shard_1.addBody(position);
+        shard_body.setVelocity(Game.Vector.init(0, -shard_speed));
         shard_1.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
         cursor.x += 5;
         shard_1.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
         shard_1.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
 
         const shard_2 = game.createEntity();
-        shard_2.add(Game.C.Body.init(position));
-        shard_body = shard_2.get(Game.C.Body);
-        shard_body.velocity = Game.Vector.init(shard_speed, 0).rotate(std.math.pi / 4.0).multiply(.init(1, -1));
+        shard_body = shard_2.addBody(position);
+        shard_body.setVelocity(Game.Vector.init(shard_speed, 0).rotate(std.math.pi / 4.0).multiply(.init(1, -1)));
         shard_2.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
         cursor.x = 193;
         cursor.y += 7;
@@ -176,27 +177,24 @@ pub const Player = struct {
         shard_2.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
 
         const shard_3 = game.createEntity();
-        shard_3.add(Game.C.Body.init(position));
-        shard_body = shard_3.get(Game.C.Body);
-        shard_body.velocity = Game.Vector.init(shard_speed, 0).rotate(std.math.pi + std.math.pi / 4.0).multiply(.init(1, -1));
+        shard_body = shard_3.addBody(position);
+        shard_body.setVelocity(Game.Vector.init(shard_speed, 0).rotate(std.math.pi + std.math.pi / 4.0).multiply(.init(1, -1)));
         shard_3.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
         cursor.x += 5;
         shard_3.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
         shard_3.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
 
         const shard_4 = game.createEntity();
-        shard_4.add(Game.C.Body.init(position));
-        shard_body = shard_4.get(Game.C.Body);
-        shard_body.velocity = Game.Vector.init(shard_speed, 0).rotate(std.math.pi + 2.0 * std.math.pi / 4.0).multiply(.init(1, -1));
+        shard_body = shard_4.addBody(position);
+        shard_body.setVelocity(Game.Vector.init(shard_speed, 0).rotate(std.math.pi + 2.0 * std.math.pi / 4.0).multiply(.init(1, -1)));
         shard_4.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
         cursor.x += 5;
         shard_4.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
         shard_4.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
 
         const shard_5 = game.createEntity();
-        shard_5.add(Game.C.Body.init(position));
-        shard_body = shard_5.get(Game.C.Body);
-        shard_body.velocity = Game.Vector.init(shard_speed, 0).rotate(std.math.pi + 3.0 * std.math.pi / 4.0).multiply(.init(1, -1));
+        shard_body = shard_5.addBody(position);
+        shard_body.setVelocity(Game.Vector.init(shard_speed, 0).rotate(std.math.pi + 3.0 * std.math.pi / 4.0).multiply(.init(1, -1)));
         shard_5.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
         shard_5.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
         shard_5.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
@@ -209,35 +207,49 @@ pub const Player = struct {
     ) void {
         if (player_component.destroyed_at != null) return;
 
-        var it = game.entityIterator(.{Game.C.Shard}, .{});
-        const player_body = player.getConst(Game.C.Body);
-
         const min_hoover_distance: f32 = 50 * 50;
         const pickup_distance: f32 = 5 * 5;
 
-        while (it.next()) |ctx| {
+        const player_body = player.getConst(Game.C.Body);
+
+        const grid = if (game.physics().grid) |*grid| grid else return;
+
+        var shard_it = game.entityIterator(.{Game.C.Shard}, .{});
+        while (shard_it.next()) |ctx| {
             const body = ctx.get(Game.C.Body);
-            const distance = body.position.distanceSqr(player_body.position);
-            const shard = ctx.get(Game.C.Shard);
+            body.enableDrag();
+        }
 
-            if (distance <= pickup_distance) {
-                ctx.destroy();
-                game.playSound(.pickup_shard);
-                player_component.shards += shard.value();
-                continue;
+        var it = grid.intersectionsCircle(game, player_body.position(), 50);
+        while (it.next()) |intersection| {
+            switch (intersection) {
+                .grid_cell => {},
+                .entity => |ctx| {
+                    if (ctx.tryGet(Game.C.Shard)) |shard| {
+                        const body = ctx.get(Game.C.Body);
+                        const distance = body.position().distanceSqr(player_body.position());
+
+                        if (distance <= pickup_distance) {
+                            ctx.destroy();
+                            game.playSound(.pickup_shard);
+                            player_component.shards += shard.value();
+                            continue;
+                        }
+
+                        if (distance > min_hoover_distance) {
+                            body.enableDrag();
+                            continue;
+                        }
+
+                        body.disableDrag();
+
+                        const hoover_ratio = (min_hoover_distance - distance) / min_hoover_distance;
+                        const hoover_speed = hoover_ratio * 100;
+
+                        body.setVelocity(player_body.position().subtract(body.position()).normalize().scale(hoover_speed));
+                    }
+                },
             }
-
-            if (distance > min_hoover_distance) {
-                shard.enable_drag = true;
-                continue;
-            }
-
-            shard.enable_drag = false;
-
-            const hoover_ratio = (min_hoover_distance - distance) / min_hoover_distance;
-            const hoover_speed = hoover_ratio * 100;
-
-            body.velocity = player_body.position.subtract(body.position).normalize().scale(hoover_speed);
         }
     }
 

@@ -1,3 +1,4 @@
+const std = @import("std");
 const ecs = @import("ecs");
 const Game = @import("../game.zig").Game;
 
@@ -23,11 +24,22 @@ pub const DestroyEntities = struct {
         for (0..self.n_entities_to_destroy) |i| {
             const entity = self.entities_to_destroy[i];
             if (!game.reg.valid(entity)) continue;
+            updateDrawLists(game, entity);
             freeStuff(game, entity);
             game.reg.destroy(entity);
         }
 
         self.n_entities_to_destroy = 0;
+    }
+
+    fn updateDrawLists(game: *Game, entity: ecs.Entity) void {
+        const ctx = Game.EntityContext.init(game, entity);
+        const renderable = ctx.tryGet(Game.C.Renderable) orelse return;
+        const list = &game.draw_layer_lists[renderable.layer()];
+        const i = for (list.items, 0..) |item, i| {
+            if (ctx.equals(.init(game, item))) break i;
+        } else return;
+        _ = game.draw_layer_lists[renderable.layer()].orderedRemove(i);
     }
 
     fn freeStuff(game: *Game, entity: ecs.Entity) void {

@@ -8,6 +8,9 @@ pub const StateMachine = struct {
     }
 
     pub fn update(_: *StateMachine, game: *Game) void {
+        const zone = Game.tracyZoneN(@src(), @typeName(@This()) ++ "." ++ @src().fn_name);
+        defer zone.end();
+
         var it = game.entityIterator(.{Game.C.StateMachine}, .{});
 
         while (it.next()) |ctx| {

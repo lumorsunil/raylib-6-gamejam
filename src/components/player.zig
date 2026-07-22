@@ -26,7 +26,8 @@ pub const Player = struct {
     }
 
     pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
-        allocator.free(self.body.slots);
+        self.body.deinit(allocator);
+        self.inventory.deinit(allocator);
     }
 
     pub fn hit(self: *Player, game: *Game, _: usize) void {
@@ -144,6 +145,10 @@ pub const Player = struct {
             };
         }
 
+        pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+            allocator.free(self.slots);
+        }
+
         pub fn gameplayOffset(self: @This(), game: *Game, slot_index: usize) Game.Vector {
             const sprite = self.body_type.sprite(game);
             return self.body_type.gameplayOffset(slot_index).multiply(sprite.size(1, 0)).subtract(sprite.origin(1, 0));
@@ -224,6 +229,10 @@ pub const Player = struct {
             const items = try allocator.alloc(?Game.C.Item, n_items_max);
             for (items) |*item| item.* = null;
             return .{ .items = items };
+        }
+
+        pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+            allocator.free(self.items);
         }
 
         /// Returns false if inventory was full

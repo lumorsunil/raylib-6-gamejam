@@ -9,6 +9,9 @@ pub const Controllable = struct {
     }
 
     pub fn update(_: *Controllable, game: *Game) void {
+        const zone = Game.tracyZoneN(@src(), @typeName(@This()) ++ "." ++ @src().fn_name);
+        defer zone.end();
+
         var it = game.entityIterator(.{ Game.C.Controllable, Game.C.Body, Game.C.Renderable }, .{});
         const input = game.input();
 
@@ -19,28 +22,28 @@ pub const Controllable = struct {
 
             if (player.destroyed_at != null) return;
 
-            body.velocity.x = input.left_x_axis * controllable.speed;
-            body.velocity.y = input.left_y_axis * controllable.speed;
+            body.setVelocityX(input.left_x_axis * controllable.speed);
+            body.setVelocityY(input.left_y_axis * controllable.speed);
 
             if (input.isDown(.move_right)) {
-                body.velocity.x += controllable.speed;
+                body.setVelocityX(body.velocity().x + controllable.speed);
             }
             if (input.isDown(.move_up)) {
-                body.velocity.y -= controllable.speed;
+                body.setVelocityY(body.velocity().y - controllable.speed);
             }
             if (input.isDown(.move_left)) {
-                body.velocity.x -= controllable.speed;
+                body.setVelocityX(body.velocity().x - controllable.speed);
             }
             if (input.isDown(.move_down)) {
-                body.velocity.y += controllable.speed;
+                body.setVelocityY(body.velocity().y + controllable.speed);
             }
 
             if (rl.isWindowFocused()) {
                 const mouse_screen = rl.getMousePosition();
                 const mouse_world = rl.getScreenToWorld2D(mouse_screen, game.camera().*);
 
-                body.position.x = mouse_world.x;
-                body.position.y = mouse_world.y;
+                body.setPositionX(mouse_world.x);
+                body.setPositionY(mouse_world.y);
             }
         }
     }

@@ -32,8 +32,8 @@ pub const Enemy = struct {
         allocator.free(self.body.slots);
     }
 
-    pub fn initRandom(game: *Game, value: usize) !@This() {
-        const body = try Body.initRandom(game, value);
+    pub fn initRandom(allocator: std.mem.Allocator, game: *Game, value: usize) !@This() {
+        const body = try Body.initRandom(allocator, game, value);
         return .init(body, .initRandom(game), body.maxHealth());
     }
 
@@ -144,7 +144,7 @@ pub const Enemy = struct {
             };
         }
 
-        pub fn initRandom(game: *Game, value: usize) !@This() {
+        pub fn initRandom(allocator: std.mem.Allocator, game: *Game, value: usize) !@This() {
             const body_type_all_candidates = comptime brk: {
                 var bts: [std.enums.values(BodyType).len]BodyType = undefined;
                 for (std.enums.values(BodyType), 0..) |bt, i| {
@@ -167,7 +167,7 @@ pub const Enemy = struct {
 
             const value_left = value - body_type.shardsDropped();
 
-            const body = try Body.init(game.allocator, body_type);
+            const body = try Body.init(allocator, body_type);
             const potential_n_items = @min(body.slots.len, @divFloor(value_left, 20));
 
             if (potential_n_items > 0) {
@@ -370,7 +370,7 @@ const AIZigZag = struct {
     pub fn initial(ctx: Game.C.StateMachineContext) void {
         ctx.ctx.add(State{});
         const body = ctx.ctx.get(Game.C.Body);
-        body.velocity.x = 25;
+        body.setVelocityX(25);
         ctx.setState(left);
         ctx.ctx.get(State).change_direction_at = ctx.elapsedTime() + State.change_duration / 2.0;
     }
@@ -379,7 +379,7 @@ const AIZigZag = struct {
         pub fn pre(ctx: Game.C.StateMachineContext) void {
             ctx.ctx.get(State).change_direction_at = ctx.elapsedTime() + State.change_duration;
             const body = ctx.ctx.get(Game.C.Body);
-            body.velocity.x *= -1;
+            body.setVelocityX(body.velocity().x * -1);
         }
 
         pub fn update(ctx: Game.C.StateMachineContext) void {
@@ -393,7 +393,7 @@ const AIZigZag = struct {
         pub fn pre(ctx: Game.C.StateMachineContext) void {
             ctx.ctx.get(State).change_direction_at = ctx.elapsedTime() + State.change_duration;
             const body = ctx.ctx.get(Game.C.Body);
-            body.velocity.x *= -1;
+            body.setVelocityX(body.velocity().x * -1);
         }
 
         pub fn update(ctx: Game.C.StateMachineContext) void {
@@ -426,28 +426,28 @@ const AISpaceInvader = struct {
             const state = ctx.ctx.get(State);
 
             if (state.entering_x_stop) |x_stop| {
-                if (body.velocity.x < 0) {
-                    if (body.position.x <= x_stop) {
-                        body.velocity.x = 0;
+                if (body.velocity().x < 0) {
+                    if (body.position().x <= x_stop) {
+                        body.setVelocityX(0);
                         state.entering_x_stop = null;
                     }
-                } else if (body.position.x >= x_stop) {
-                    body.velocity.x = 0;
+                } else if (body.position().x >= x_stop) {
+                    body.setVelocityX(0);
                     state.entering_x_stop = null;
                 }
             }
 
-            if (body.position.y >= state.entering_ends_at_y) {
+            if (body.position().y >= state.entering_ends_at_y) {
                 if (collidesWithOtherEnemy(ctx.ctx)) {
                     state.entering_ends_at_y += 32;
 
                     if (state.entering_x_stop == null) {
                         if (ctx.chance(0.33)) {
-                            state.entering_x_stop = body.position.x - 32;
-                            body.velocity.x = -64;
+                            state.entering_x_stop = body.position().x - 32;
+                            body.setVelocityX(-64);
                         } else if (ctx.chance(0.50)) {
-                            state.entering_x_stop = body.position.x + 32;
-                            body.velocity.x = 64;
+                            state.entering_x_stop = body.position().x + 32;
+                            body.setVelocityX(64);
                         }
                     }
                 } else {
@@ -477,8 +477,7 @@ const AISpaceInvader = struct {
         pub fn pre(ctx: Game.C.StateMachineContext) void {
             ctx.ctx.get(State).hover_ends_at = ctx.elapsedTime() + 6;
             const body = ctx.ctx.get(Game.C.Body);
-            body.velocity.y = 0;
-            body.velocity.x = 0;
+            body.setVelocity(.init(0, 0));
         }
 
         pub fn update(ctx: Game.C.StateMachineContext) void {
@@ -492,7 +491,7 @@ const AISpaceInvader = struct {
         pub fn pre(ctx: Game.C.StateMachineContext) void {
             const enemy = ctx.ctx.get(Game.C.Enemy);
             const body = ctx.ctx.get(Game.C.Body);
-            body.velocity = enemy.body.body_type.velocity().scale(1.5);
+            body.setVelocity(enemy.body.body_type.velocity().scale(1.5));
         }
 
         pub fn update(_: Game.C.StateMachineContext) void {}

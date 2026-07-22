@@ -5,6 +5,9 @@ const rl = @import("raylib");
 const enable_debug_draw = true;
 
 pub fn draw(self: *Game) void {
+    const zone = Game.tracyZoneN(@src(), @src().fn_name);
+    defer zone.end();
+
     switch (self.screen_state) {
         .logo => drawLogo(self),
         .menu => drawMenu(self),
@@ -13,6 +16,7 @@ pub fn draw(self: *Game) void {
         .modification => drawModification(self),
         .ending => drawEnding(self),
         .game_over => drawGameOver(self),
+        .debug => drawDebug(self),
     }
 }
 
@@ -79,12 +83,13 @@ fn drawVolume(self: *Game) void {
 fn drawGameplay(self: *Game) void {
     rl.clearBackground(.black);
     self.camera().begin();
-    drawGrid(self);
+    // drawGrid(self);
     drawRenderables(self);
     // debugDraw(self);
     drawBorder(self);
+    // drawDebugGameplay(self);
     self.camera().end();
-    // rl.drawFPS(8, 8);
+    rl.drawFPS(8, 8);
 
     var ui_camera = self.camera().*;
     ui_camera.offset = .zero();
@@ -95,10 +100,45 @@ fn drawGameplay(self: *Game) void {
     ui_camera.end();
 }
 
+fn drawDebugGameplay(self: *Game) void {
+    const grid = if (self.physics().grid) |*grid| grid else return;
+
+    const player = self.player();
+    const player_body = player.getConst(Game.C.Body);
+
+    const candidates = Game.S.Physics.DefaultGrid.CellCandidates.initCircle(grid.*, player_body.position, 50);
+
+    rl.drawCircleLinesV(player_body.position, 50, .alpha(.yellow, 0.5));
+
+    for (grid.data, 0..) |*cell, i| {
+        const count = cell.objects.count();
+        const x = i % grid.width;
+        const y = i / grid.width;
+
+        const size = grid.cellSize();
+        const position = Game.Vector.init(
+            @floatFromInt(x),
+            @floatFromInt(y),
+        ).multiply(size);
+
+        const color: Game.Color = if (count == 0) .gray else if (count < 50) .blue else if (count < 100) .green else if (count < 150) .yellow else if (count < 200) .orange else .red;
+        rl.drawRectangleV(position.add(size.subtract(size.scale(0.8)).scale(0.5)), size.scale(0.8), .alpha(color, 0.4));
+        const border_color: Game.Color = if (x >= candidates.min_x and x <= candidates.max_x and y >= candidates.min_y and y <= candidates.max_y) .blue else .white;
+        rl.drawRectangleLinesEx(.init(
+            position.x,
+            position.y,
+            size.x,
+            size.y,
+        ), 2, border_color);
+    }
+
+    rl.drawRectangleLinesEx(candidates.aabb, 1, .green);
+}
+
 fn drawShop(self: *Game) void {
     // rl.clearBackground(.gray);
     self.camera().begin();
-    self.initSprite(.init(820, 0, 204, 360)).draw(self.getAbsolutePos(.init(0.5, 0.5)), 1, 0);
+    self.initSprite(.init(820, 0, 204, 360)).draw(null, self.getAbsolutePos(.init(0.5, 0.5)), 1, 0);
     drawBorder(self);
 
     const flen: f32 = @floatFromInt(self.shop_state.items.len);
@@ -134,8 +174,8 @@ fn drawShop(self: *Game) void {
         const item_renderable = item.sprite(self);
         const item_size = empty_slot_renderable.size(1, 0);
         const abs_pos = self.getAbsolutePos(cursor);
-        empty_slot_renderable.draw(abs_pos, 1, 0);
-        item_renderable.draw(abs_pos, 1, 0);
+        empty_slot_renderable.draw(null, abs_pos, 1, 0);
+        item_renderable.draw(null, abs_pos, 1, 0);
 
         const cost = item.cost();
         const shard_position = abs_pos.add(.init(0, item_size.y + 8));
@@ -197,7 +237,7 @@ fn drawShardCounter(
         bg_color,
     );
 
-    shard_renderable.draw(shard_position, 1, shard_rotation);
+    shard_renderable.draw(null, shard_position, 1, shard_rotation);
     const cost_position = shard_position.add(.init(shard_size.x + 2, -font_size / 2));
     drawText("{}", .{amount}, font_size, cost_position, text_color);
 }
@@ -268,7 +308,7 @@ fn drawModification(self: *Game) void {
     // rl.clearBackground(.gray);
     self.camera().begin();
     drawBorder(self);
-    self.initSprite(.init(820, 0, 204, 360)).draw(self.getAbsolutePos(.init(0.5, 0.5)), 1, 0);
+    self.initSprite(.init(820, 0, 204, 360)).draw(null, self.getAbsolutePos(.init(0.5, 0.5)), 1, 0);
 
     if (self.modification_state.selectedItem()) |item| {
         drawItemDescription(self, item);
@@ -293,14 +333,14 @@ fn drawModificationShip(self: *Game) void {
 
     const position = tl.add(size.scale(0.5));
 
-    player_component.body.body_type.modificationSprite(self).draw(position, 2, 0);
+    player_component.body.body_type.modificationSprite(self).draw(null, position, 2, 0);
     const mouse_pos = rl.getScreenToWorld2D(rl.getMousePosition(), self.camera().*);
 
     for (player_component.body.slots, 0..) |slot, i| {
         const item = slot orelse continue;
         const offset = player_component.body.equipOffset(self, i);
         const center = position.add(offset);
-        item.sprite(self).draw(center, 2, 0);
+        item.sprite(self).draw(null, center, 2, 0);
 
         if (rl.isMouseButtonPressed(.left)) {
             if (item.sprite(self).containsPoint(center, mouse_pos, 2, 0)) {
@@ -313,7 +353,7 @@ fn drawModificationShip(self: *Game) void {
 
         if (self.modification_state.isItemSelected(i, player_component.body.slots)) {
             const selection_border = self.initSprite(.init(93, 101, 17, 19));
-            selection_border.draw(center, 2, 0);
+            selection_border.draw(null, center, 2, 0);
         }
     }
 
@@ -356,10 +396,10 @@ fn drawModificationShip(self: *Game) void {
 
                     if (canMerge(selected_item, slot_item)) {
                         const merge_border = self.initSprite(.init(71, 142, 19, 21));
-                        merge_border.draw(center, 2, 0);
+                        merge_border.draw(null, center, 2, 0);
                     } else {
                         const swap_border = self.initSprite(.init(75, 101, 17, 19));
-                        swap_border.draw(center, 2, 0);
+                        swap_border.draw(null, center, 2, 0);
                     }
 
                     break;
@@ -402,11 +442,11 @@ fn drawInventory(self: *Game) void {
                 @floatFromInt(y),
             ).multiply(slot_size).add(.init(offset_x, 0));
             const position = start.add(offset);
-            empty_slot.draw(position, 1, 0);
+            empty_slot.draw(null, position, 1, 0);
             const i = x + y * n_cols;
 
             const item = player_component.inventory.items[i] orelse continue;
-            item.sprite(self).draw(position, 1, 0);
+            item.sprite(self).draw(null, position, 1, 0);
 
             if (self.modification_state.isItemSelected(i, player_component.inventory.items)) {
                 selected_position = position;
@@ -482,10 +522,10 @@ fn drawInventory(self: *Game) void {
 
                         if (canMerge(selected_item, slot_item)) {
                             const merge_border = self.initSprite(.init(71, 142, 19, 21));
-                            merge_border.draw(position, 1, 0);
+                            merge_border.draw(null, position, 1, 0);
                         } else {
                             const swap_border = self.initSprite(.init(75, 101, 17, 19));
-                            swap_border.draw(position, 1, 0);
+                            swap_border.draw(null, position, 1, 0);
                         }
 
                         break :outer;
@@ -497,7 +537,7 @@ fn drawInventory(self: *Game) void {
 
     if (selected_position) |position| {
         const selection_border = self.initSprite(.init(93, 101, 17, 19));
-        selection_border.draw(position, 1, 0);
+        selection_border.draw(null, position, 1, 0);
     }
 }
 
@@ -552,7 +592,7 @@ fn drawDrag(self: *Game) void {
     var sprite = item.sprite(self);
     sprite.sprite.tint = .alpha(.white, 0.5);
 
-    sprite.draw(mouse_pos, 2, 0);
+    sprite.draw(null, mouse_pos, 2, 0);
 }
 
 fn drawNextLevelButton(self: *Game) void {
@@ -681,163 +721,62 @@ fn lessThan(_: usize, a: usize, b: usize) bool {
 }
 
 fn drawRenderables(self: *Game) void {
-    var it = self.entityIterator(.{ Game.C.Renderable, Game.C.Body }, .{Game.C.Invisible});
-    const n_layers = 4;
+    const zone = Game.tracyZoneN(@src(), @src().fn_name);
+    defer zone.end();
 
-    for (0..n_layers) |layer| {
-        it.reset();
-        while (it.next()) |ctx| {
-            const renderable = ctx.getConst(Game.C.Renderable);
-            if (renderable.layer() != layer) continue;
+    // var it = self.entityIterator(.{ Game.C.Renderable, Game.C.Body }, .{Game.C.Invisible});
+    // const n_layers = 4;
+
+    for (self.draw_layer_lists) |list| {
+        for (list.items) |entity| {
+            const entity_zone = Game.tracyZoneN(@src(), @src().fn_name ++ ".entity");
+            defer entity_zone.end();
+
+            const ctx = Game.EntityContext.init(self, entity);
             drawRenderable(self, ctx);
         }
     }
+
+    // for (0..n_layers) |layer| {
+    //     it.reset();
+    //     while (it.next()) |ctx| {
+    //         const entity_zone = Game.tracyZoneN(@src(), @src().fn_name ++ ".entity");
+    //         defer entity_zone.end();
+    //
+    //         // if (ctx.has(Game.C.Shard)) continue;
+    //         const renderable = ctx.getConst(Game.C.Renderable);
+    //         if (renderable.layer() != layer) continue;
+    //         drawRenderable(self, ctx);
+    //     }
+    // }
 }
 
-// fn drawRenderables(self: *Game) void {
-//     var it = self.entityIterator(.{ Game.C.Renderable, Game.C.Body }, .{Game.C.Invisible});
-//
-//     var layer_map: std.array_hash_map.Auto(usize, std.ArrayList(Game.EntityContext)) = .empty;
-//     defer {
-//         for (layer_map.values()) |*list| {
-//             list.deinit(self.allocator);
-//         }
-//         layer_map.deinit(self.allocator);
-//     }
-//
-//     while (it.next()) |ctx| {
-//         const renderable = ctx.getConst(Game.C.Renderable);
-//         const layer = renderable.layer();
-//
-//         const entry = layer_map.getOrPut(self.allocator, layer) catch unreachable;
-//         if (!entry.found_existing) {
-//             entry.value_ptr.* = .empty;
-//         }
-//
-//         entry.value_ptr.append(self.allocator, ctx) catch unreachable;
-//     }
-//     std.mem.sort(usize, layer_map.keys(), @as(usize, 0), lessThan);
-//     layer_map.reIndex(self.allocator) catch unreachable;
-//
-//     // TODO: figure out why things are not drawn in correct order
-//
-//     for (layer_map.keys()) |k| {
-//         const list = layer_map.get(k).?;
-//         for (list.items) |ctx| {
-//             drawRenderable(self, ctx);
-//         }
-//     }
-// }
+fn drawRenderable(_: *Game, ctx: Game.EntityContext) void {
+    const zone = Game.tracyZoneN(@src(), @src().fn_name);
+    defer zone.end();
 
-fn drawRenderable(self: *Game, ctx: Game.EntityContext) void {
+    const body_zone = Game.tracyZoneN(@src(), "fetch body");
     const body = ctx.get(Game.C.Body);
-    var renderable = ctx.getConst(Game.C.Renderable);
+    body_zone.end();
+    const renderable_zone = Game.tracyZoneN(@src(), "fetch renderable");
+    const renderable = ctx.getConst(Game.C.Renderable);
+    renderable_zone.end();
 
-    if (ctx.tryGetConst(Game.C.Player)) |player| {
-        if (player.destroyed_at) |_| {
-            return;
-        }
-    }
+    // TODO: figure this out when we're implementing drawing modifications on the ship
+    // if (ctx.tryGetConst(Game.C.RelativePosition)) |rel_pos| {
+    //     if (rel_pos.anchoree.tryGetConst(Game.C.Player)) |player| {
+    //         if (player.destroyed_at) |_| {
+    //             return;
+    //         }
+    //     }
+    // }
 
-    if (ctx.tryGetConst(Game.C.RelativePosition)) |rel_pos| {
-        if (rel_pos.anchoree.tryGetConst(Game.C.Player)) |player| {
-            if (player.destroyed_at) |_| {
-                return;
-            }
-        }
-    }
+    const physics_zone = Game.tracyZoneN(@src(), "fetch physics");
+    const position = body.position();
+    const rotation = body.rotation();
+    physics_zone.end();
 
-    if (ctx.tryGetConst(Game.C.ScaleGradient)) |scale_gradient| {
-        body.scale += scale_gradient.delta_per_second * self.deltaTime();
-    }
-
-    if (ctx.tryGetConst(Game.C.FadeGradient)) |fade_gradient| {
-        renderable.sprite.tint = renderable.sprite.tint.alpha(fade_gradient.alpha(self.elapsedTime()));
-    }
-
-    renderable.draw(body.position, body.scale, body.rotation);
-    drawEnemyHit(self, ctx, body.*);
-    drawShardShimmer(self, ctx, body.*);
-    drawShield(self, ctx, body.*);
-}
-
-fn drawEnemyHit(
-    self: *Game,
-    ctx: Game.EntityContext,
-    body: Game.C.Body,
-) void {
-    if (ctx.tryGetConst(Game.C.Enemy)) |enemy| {
-        const t = self.elapsedTime();
-        if (enemy.hit_fade_ends_at <= t) return;
-
-        const d = enemy.hit_fade_ends_at - t;
-        const ratio: f32 = @floatCast(d / Game.C.Enemy.hit_fade_duration);
-
-        var renderable_fade = enemy.body.body_type.hitSprite(self);
-        renderable_fade.sprite.tint = .alpha(.white, ratio);
-        renderable_fade.draw(body.position, body.scale, body.rotation);
-    }
-}
-
-fn drawShardShimmer(
-    self: *Game,
-    ctx: Game.EntityContext,
-    body: Game.C.Body,
-) void {
-    const shard = ctx.tryGetConst(Game.C.Shard) orelse return;
-
-    const t = self.elapsedTime();
-
-    const time_factor = 6;
-
-    const sweep_ratio = @mod(t * time_factor, 8);
-    if (sweep_ratio >= 4) return;
-
-    const p_rel = self.getRelativePos(body.position);
-    const d = 1 - @abs((sweep_ratio - 2) - p_rel.x + p_rel.y);
-    const ratio: f32 = @floatCast(d);
-
-    var renderable_fade = shard.shimmer_renderable(self);
-    renderable_fade.sprite.tint = .alpha(.white, ratio);
-    renderable_fade.draw(body.position, body.scale, body.rotation);
-}
-
-fn drawShield(
-    self: *Game,
-    ctx: Game.EntityContext,
-    body: Game.C.Body,
-) void {
-    if (ctx.tryGet(Game.C.Player)) |player| {
-        var it = player.shieldIterator();
-
-        var has_shield_item = false;
-        while (it.next()) |entry| {
-            has_shield_item = true;
-            if (entry.shield.n_charges > 0) {
-                if (player.shield_animation.isDone()) {
-                    entry.shield.shieldSprite(self).draw(body.position, 1, 0);
-                } else {
-                    player.shield_animation.currentFrame().draw(body.position, 1, 0);
-                }
-                return;
-            }
-        }
-
-        if (has_shield_item and !player.shield_animation.isDone()) {
-            player.shield_animation.currentFrame().draw(body.position, 1, 0);
-        }
-    }
-
-    if (ctx.tryGet(Game.C.Enemy)) |enemy| {
-        var it = enemy.shieldIterator();
-
-        while (it.next()) |entry| {
-            if (entry.shield.n_charges > 0) {
-                entry.shield.shieldSprite(self).draw(body.position, 1, 0);
-                return;
-            }
-        }
-    }
+    renderable.draw(ctx, position, body.scale, rotation);
 }
 
 fn drawGrid(self: *Game) void {
@@ -870,14 +809,14 @@ fn drawHUD(self: *Game) void {
     var cursor = self.worldTopLeft().add(lives_renderable.size(1, 0));
 
     for (0..lives) |_| {
-        lives_renderable.draw(cursor, 1, 0);
+        lives_renderable.draw(null, cursor, 1, 0);
         cursor.x += lives_renderable.size(1, 0).x + 4;
     }
 
     const shard_renderable = Game.C.Shard.Type.small.renderable(self);
     cursor = self.getAbsolutePos(.init(0.8, 0));
     cursor.y += lives_renderable.size(1, 0).y;
-    shard_renderable.draw(cursor, 2, std.math.pi / 4.0);
+    shard_renderable.draw(null, cursor, 2, std.math.pi / 4.0);
     cursor.x += shard_renderable.size(2, 0).x;
     cursor.y -= 2;
     // drawTextCentered("X", .{}, 6, cursor, .white);
@@ -890,4 +829,8 @@ fn drawHUD(self: *Game) void {
     cursor = self.worldCenterTop();
     cursor.y += 8;
     drawTextCentered("STAGE {}", .{enemy_system.current_stage_index}, 10, cursor, .white);
+}
+
+fn drawDebug(self: *Game) void {
+    drawGameplay(self);
 }

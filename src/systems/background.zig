@@ -64,7 +64,8 @@ pub const Background = struct {
 
             for (0..n_ctxs) |i| {
                 const body = ctxs[i].get(Game.C.Body);
-                body.position = body.position.add(body.velocity.scale(@floatCast(time_step)));
+                const delta = body.velocity().scale(@floatCast(time_step));
+                body.setPosition(body.position().add(delta));
             }
 
             t += time_step;
@@ -74,6 +75,9 @@ pub const Background = struct {
     }
 
     pub fn update(self: *Background, game: *Game) void {
+        const zone = Game.tracyZoneN(@src(), @typeName(@This()) ++ "." ++ @src().fn_name);
+        defer zone.end();
+
         const t = game.elapsedTime();
 
         if (self.next_body_at <= t) {
@@ -90,9 +94,8 @@ pub const Background = struct {
         const ctx = game.createEntity();
         var position = Game.Vector.init(game.random().float(f32), 0);
         position = position.multiply(world_size).add(world_pos);
-        ctx.add(Game.C.Body.init(position));
-        const body = ctx.get(Game.C.Body);
-        body.velocity.y = game.random().float(f32) * velocity_y_variance + velocity_y_min;
+        const body = ctx.addBody(position);
+        body.setVelocityY(game.random().float(f32) * velocity_y_variance + velocity_y_min);
         ctx.add(randomSprite(game));
         ctx.add(Game.C.Background.init());
 

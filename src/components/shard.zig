@@ -55,7 +55,8 @@ pub const Shard = struct {
     }
 
     pub fn renderable(self: Shard, game: *Game) Game.C.Renderable {
-        return self.shard_type.renderable(game);
+        const sprite = self.shard_type.renderable(game).sprite;
+        return Game.C.Renderable{ .shard = .{ .sprite = sprite } };
     }
 
     pub fn shimmer_renderable(self: Shard, game: *Game) Game.C.Renderable {

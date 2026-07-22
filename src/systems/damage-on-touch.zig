@@ -8,6 +8,9 @@ pub const DamageOnTouch = struct {
     }
 
     pub fn update(_: *DamageOnTouch, game: *Game) void {
+        const zone = Game.tracyZoneN(@src(), @typeName(@This()) ++ "." ++ @src().fn_name);
+        defer zone.end();
+
         var it = game.entityIterator(.{ Game.C.Body, Game.C.DamageOnTouch }, .{});
         const player = game.player();
         const player_hitbox = game.hitbox(player);

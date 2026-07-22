@@ -1,4 +1,5 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const Game = @import("../game.zig").Game;
 
 const n_waves_max = 10;
@@ -15,8 +16,8 @@ const EnemyDef = struct {
         return .{ .body = body, .ai_type = ai_type };
     }
 
-    pub fn initRandom(game: *Game, value: usize) !@This() {
-        const enemy = try Game.C.Enemy.initRandom(game, value);
+    pub fn initRandom(allocator: Allocator, game: *Game, value: usize) !@This() {
+        const enemy = try Game.C.Enemy.initRandom(allocator, game, value);
         return .init(enemy.body, enemy.ai.ai_type);
     }
 
@@ -67,11 +68,16 @@ const SpawnDef = union(enum) {
     enemy: EnemyDef,
     group: Group,
 
-    pub fn initRandom(game: *Game, ship_value: usize, wave_index: usize) !@This() {
+    pub fn initRandom(
+        allocator: Allocator,
+        game: *Game,
+        ship_value: usize,
+        wave_index: usize,
+    ) !@This() {
         if (game.random().float(f32) > 0.2) {
-            return .{ .enemy = try .initRandom(game, ship_value) };
+            return .{ .enemy = try .initRandom(allocator, game, ship_value) };
         } else {
-            return .{ .group = try .initRandom(game, ship_value, wave_index) };
+            return .{ .group = try .initRandom(allocator, game, ship_value, wave_index) };
         }
     }
 
@@ -90,7 +96,12 @@ const SpawnDef = union(enum) {
             return .{ .enemies = enemies };
         }
 
-        pub fn initRandom(game: *Game, ship_value: usize, wave_index: usize) !@This() {
+        pub fn initRandom(
+            allocator: Allocator,
+            game: *Game,
+            ship_value: usize,
+            wave_index: usize,
+        ) !@This() {
             const n_enemies_table = [n_waves_max]struct { usize, usize }{
                 .{ 2, 2 }, // easy (ship_value * 1)
                 .{ 2, 2 },
@@ -106,16 +117,16 @@ const SpawnDef = union(enum) {
             const n_enemies_min, const n_enemies_max = n_enemies_table[wave_index];
 
             const n_enemies = game.random().intRangeAtMost(usize, n_enemies_min, n_enemies_max);
-            const enemies = try game.allocator.alloc(GroupEnemy, n_enemies);
+            const enemies = try allocator.alloc(GroupEnemy, n_enemies);
             const x_step: f32 = 1.0 / @as(f32, @floatFromInt(n_enemies + 1));
 
-            const same_enemy = if (game.random().boolean()) null else try EnemyDef.initRandom(game, ship_value);
+            const same_enemy = if (game.random().boolean()) null else try EnemyDef.initRandom(allocator, game, ship_value);
 
             for (enemies, 0..) |*enemy, i| {
                 const fi: f32 = @floatFromInt(i);
                 const position = Game.Vector.init(x_step * (fi + 1), 0);
-                const enemy_def: EnemyDef = same_enemy orelse try .initRandom(game, ship_value);
-                enemy.* = .init(position, null, enemy_def.clone(game.allocator) catch unreachable);
+                const enemy_def: EnemyDef = same_enemy orelse try .initRandom(allocator, game, ship_value);
+                enemy.* = .init(position, null, enemy_def.clone(allocator) catch unreachable);
             }
 
             return .init(enemies);
@@ -182,7 +193,12 @@ const WaveDef = struct {
         return .{ .position = position, .spawns = spawns, .interval = interval };
     }
 
-    pub fn initRandom(game: *Game, ship_value: usize, wave_index: usize) !@This() {
+    pub fn initRandom(
+        allocator: Allocator,
+        game: *Game,
+        ship_value: usize,
+        wave_index: usize,
+    ) !@This() {
         const lanes = [_]Game.Vector{
             .init(0.25, 0),
             .init(0.5, 0),
@@ -209,9 +225,9 @@ const WaveDef = struct {
         const n_spawns_min, const n_spawns_max = n_spawns_table[wave_index];
 
         const n_spawns = game.random().intRangeAtMost(usize, n_spawns_min, n_spawns_max);
-        const spawns = try game.allocator.alloc(SpawnDef, n_spawns);
+        const spawns = try allocator.alloc(SpawnDef, n_spawns);
 
-        for (spawns) |*spawn| spawn.* = try .initRandom(game, ship_value, wave_index);
+        for (spawns) |*spawn| spawn.* = try .initRandom(allocator, game, ship_value, wave_index);
 
         return .init(lane, spawns, interval);
     }
@@ -271,14 +287,21 @@ const Wave = struct {
 };
 
 const Stage = struct {
+    arena: std.heap.ArenaAllocator,
     waves: []const WaveDef,
     n_waves_spawned: usize = 0,
     next_wave_at: f64 = 0,
     interval: f64,
     starting_value: usize,
 
-    pub fn init(waves: []const WaveDef, interval: f64, starting_value: usize) @This() {
+    pub fn init(
+        arena: std.heap.ArenaAllocator,
+        waves: []const WaveDef,
+        interval: f64,
+        starting_value: usize,
+    ) @This() {
         return .{
+            .arena = arena,
             .waves = waves,
             .interval = interval,
             .next_wave_at = waves[0].totalDuration() + interval,
@@ -286,20 +309,27 @@ const Stage = struct {
         };
     }
 
+    pub fn deinit(self: @This()) void {
+        self.arena.deinit();
+    }
+
     pub fn initRandom(game: *Game, starting_value: usize) !@This() {
         const n_waves = n_waves_max;
         // const n_waves = 1;
 
-        const waves = try game.allocator.alloc(WaveDef, n_waves);
+        var arena = std.heap.ArenaAllocator.init(game.allocator);
+        const allocator = arena.allocator();
+
+        const waves = try allocator.alloc(WaveDef, n_waves);
         for (waves, 0..) |*wave, i| {
             const easy_wave = starting_value;
             const moderate_wave: usize = @intFromFloat(@as(f32, @floatFromInt(starting_value)) * 1.5);
             const difficult_wave = starting_value * 2;
             const ship_points = if (i == 5 or i == 9) difficult_wave else if (i < 5) easy_wave else moderate_wave;
-            wave.* = try .initRandom(game, ship_points, i);
+            wave.* = try .initRandom(allocator, game, ship_points, i);
         }
 
-        return .init(waves, 4, starting_value);
+        return .init(arena, waves, 4, starting_value);
     }
 
     pub fn setup(self: *@This(), t: f64) void {
@@ -392,6 +422,10 @@ pub const Enemy = struct {
     }
 
     pub fn nextStage(self: *@This(), game: *Game) !void {
+        if (self.current_stage_index > 0) {
+            self.current_stage.deinit();
+        }
+
         self.current_stage = try .initRandom(game, self.current_value);
         self.current_wave = self.current_stage.nextWave();
         self.current_value += 10;
@@ -408,6 +442,9 @@ pub const Enemy = struct {
     }
 
     pub fn update(self: *Enemy, game: *Game) void {
+        const zone = Game.tracyZoneN(@src(), @typeName(@This()) ++ "." ++ @src().fn_name);
+        defer zone.end();
+
         self.updateStage(game);
         self.updateHits(game);
         self.updateAI(game);
@@ -497,14 +534,14 @@ pub const Enemy = struct {
             break :brk p;
         };
         position = game.getAbsolutePos(position);
-        ctx.add(Game.C.Body.init(position));
-        const body = ctx.get(Game.C.Body);
-        body.velocity = if (velocity_override) |v| v else enemy_def.velocity();
-        body.rotation = std.math.pi;
-        ctx.add(Game.C.Enemy.init(enemy_def.body, enemy_def.ai_type, enemy_def.health()));
+        const body = ctx.addBody(position);
+        body.setVelocity(if (velocity_override) |v| v else enemy_def.velocity());
+        body.setRotation(std.math.pi);
+        ctx.add(Game.C.Enemy.init(enemy_def.body.clone(game.allocator) catch unreachable, enemy_def.ai_type, enemy_def.health()));
         const enemy = ctx.get(Game.C.Enemy);
-        var renderable = enemy.body.body_type.sprite(game);
-        renderable.sprite.draw_layer = Game.draw_layers.enemy;
+        var sprite = enemy.body.body_type.sprite(game).sprite;
+        sprite.draw_layer = Game.draw_layers.enemy;
+        const renderable = Game.C.Renderable{ .enemy = .{ .sprite = sprite } };
         ctx.add(renderable);
         // if (enemy_def.weapon) |weapon_type| {
         //     ctx.add(Game.C.EnemyWeapon.init(weapon_type));
@@ -557,8 +594,8 @@ pub const Enemy = struct {
         game.playSound(.enemy_hit);
         if (enemy_component.health <= 0) {
             const enemy_body = enemy.getConst(Game.C.Body);
-            spawnExplosion(game, enemy_body.position);
-            spawnShards(game, enemy_component.*, enemy_body.position);
+            spawnExplosion(game, enemy_body.position());
+            spawnShards(game, enemy_component.*, enemy_body.position());
             game.playSound(.enemy_explosion);
             return enemy.destroy();
         }
@@ -570,7 +607,7 @@ pub const Enemy = struct {
             .medium => 3000,
             .large => 2000,
         };
-        const knockback_force = projectile_body.velocity.normalize().scale(knockback_factor);
+        const knockback_force = projectile_body.velocity().normalize().scale(knockback_factor);
         knockback.* = .init(knockback_force);
     }
 
@@ -581,7 +618,7 @@ pub const Enemy = struct {
         const shard_duration = 0.3;
 
         const center_ctx = game.createEntity();
-        center_ctx.add(Game.C.Body.init(position));
+        _ = center_ctx.addBody(position);
         center_ctx.add(game.initSprite(.init(158, 6, 31, 17)));
         center_ctx.add(Game.C.ScaleGradient.init(center_scale_per_second));
         center_ctx.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
@@ -590,27 +627,24 @@ pub const Enemy = struct {
         const shard_size = Game.Vector.init(5, 6);
 
         const shard_0 = game.createEntity();
-        shard_0.add(Game.C.Body.init(position));
-        var shard_body = shard_0.get(Game.C.Body);
-        shard_body.velocity = Game.Vector.init(shard_speed, 0).rotate(std.math.pi / 2.0 + std.math.pi / 4.0).multiply(.init(1, -1));
+        var shard_body = shard_0.addBody(position);
+        shard_body.setVelocity(Game.Vector.init(shard_speed, 0).rotate(std.math.pi / 2.0 + std.math.pi / 4.0).multiply(.init(1, -1)));
         shard_0.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
         cursor.x += 5;
         shard_0.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
         shard_0.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
 
         const shard_1 = game.createEntity();
-        shard_1.add(Game.C.Body.init(position));
-        shard_body = shard_1.get(Game.C.Body);
-        shard_body.velocity = Game.Vector.init(0, -shard_speed);
+        shard_body = shard_1.addBody(position);
+        shard_body.setVelocity(Game.Vector.init(0, -shard_speed));
         shard_1.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
         cursor.x += 5;
         shard_1.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
         shard_1.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
 
         const shard_2 = game.createEntity();
-        shard_2.add(Game.C.Body.init(position));
-        shard_body = shard_2.get(Game.C.Body);
-        shard_body.velocity = Game.Vector.init(shard_speed, 0).rotate(std.math.pi / 4.0).multiply(.init(1, -1));
+        shard_body = shard_2.addBody(position);
+        shard_body.setVelocity(Game.Vector.init(shard_speed, 0).rotate(std.math.pi / 4.0).multiply(.init(1, -1)));
         shard_2.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
         cursor.x = 193;
         cursor.y += 7;
@@ -618,27 +652,24 @@ pub const Enemy = struct {
         shard_2.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
 
         const shard_3 = game.createEntity();
-        shard_3.add(Game.C.Body.init(position));
-        shard_body = shard_3.get(Game.C.Body);
-        shard_body.velocity = Game.Vector.init(shard_speed, 0).rotate(std.math.pi + std.math.pi / 4.0).multiply(.init(1, -1));
+        shard_body = shard_3.addBody(position);
+        shard_body.setVelocity(Game.Vector.init(shard_speed, 0).rotate(std.math.pi + std.math.pi / 4.0).multiply(.init(1, -1)));
         shard_3.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
         cursor.x += 5;
         shard_3.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
         shard_3.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
 
         const shard_4 = game.createEntity();
-        shard_4.add(Game.C.Body.init(position));
-        shard_body = shard_4.get(Game.C.Body);
-        shard_body.velocity = Game.Vector.init(shard_speed, 0).rotate(std.math.pi + 2.0 * std.math.pi / 4.0).multiply(.init(1, -1));
+        shard_body = shard_4.addBody(position);
+        shard_body.setVelocity(Game.Vector.init(shard_speed, 0).rotate(std.math.pi + 2.0 * std.math.pi / 4.0).multiply(.init(1, -1)));
         shard_4.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
         cursor.x += 5;
         shard_4.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
         shard_4.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
 
         const shard_5 = game.createEntity();
-        shard_5.add(Game.C.Body.init(position));
-        shard_body = shard_5.get(Game.C.Body);
-        shard_body.velocity = Game.Vector.init(shard_speed, 0).rotate(std.math.pi + 3.0 * std.math.pi / 4.0).multiply(.init(1, -1));
+        shard_body = shard_5.addBody(position);
+        shard_body.setVelocity(Game.Vector.init(shard_speed, 0).rotate(std.math.pi + 3.0 * std.math.pi / 4.0).multiply(.init(1, -1)));
         shard_5.add(game.initSprite(.init(cursor.x, cursor.y, shard_size.x, shard_size.y)));
         shard_5.add(Game.C.DestroyAt.init(game.elapsedTime() + shard_duration));
         shard_5.add(Game.C.FadeGradient.init(game.elapsedTime(), fade_duration));
@@ -681,13 +712,12 @@ pub const Enemy = struct {
 
     fn spawnShard(game: *Game, shard_type: Game.C.Shard.Type, position: Game.Vector) void {
         const ctx = game.createEntity();
-        ctx.add(Game.C.Body.init(position));
-        const body = ctx.get(Game.C.Body);
+        const body = ctx.addBody(position);
         const random_speed = game.random().float(f32) * shard_speed_variance + shard_speed_min;
         const r = game.random().float(f32) * std.math.pi * 2;
         const random_vel = Game.Vector.init(random_speed, 0).rotate(r);
-        body.velocity = random_vel;
-        body.angular_velocity = random_speed;
+        body.setVelocity(random_vel);
+        body.setRotationVelocity(random_speed);
         const shard = Game.C.Shard.init(shard_type);
         ctx.add(shard);
         ctx.add(shard.renderable(game));
@@ -724,16 +754,6 @@ pub const Enemy = struct {
                 }
             }
         }
-
-        // var it = game.entityIterator(.{ Game.C.Enemy, Game.C.EnemyWeapon }, .{});
-        //
-        // while (it.next()) |ctx| {
-        //     const weapon = ctx.get(Game.C.EnemyWeapon);
-        //
-        //     if (weapon.next_shot_at < game.elapsedTime()) {
-        //         shootWeapon(game, ctx, weapon);
-        //     }
-        // }
     }
 
     fn updateWeapon(
@@ -748,7 +768,7 @@ pub const Enemy = struct {
         if (weapon.item_type.weapon.next_shoot_at <= game.elapsedTime()) {
             const body = enemy.getConst(Game.C.Body);
             const offset = enemy_component.body.offset(game, slot_index);
-            const position = body.position.add(offset);
+            const position = body.position().add(offset);
             weapon.item_type.weapon.shoot(game, weapon, position, enemy, onSpawnProjectile);
         }
     }
@@ -776,12 +796,10 @@ pub const Enemy = struct {
         bullet_ctx.add(animation);
         bullet_ctx.add(animation.currentFrame());
         const enemy_body = ctx.get(Game.C.Body);
-        var body = Game.C.Body.init(enemy_body.position);
         const offset_distance = 8;
         const offset = Game.Vector.init(0, -offset_distance);
-        body.position = body.position.add(offset);
-        body.rotation = enemy_body.rotation;
-        bullet_ctx.add(body);
+        const body = bullet_ctx.addBody(enemy_body.position().add(offset));
+        body.setRotation(enemy_body.rotation());
         bullet_ctx.add(Game.C.DamageOnTouch.init());
         bullet_ctx.add(Game.C.Owner.init(ctx));
         bullet_ctx.add(Game.C.RelativePosition.init(ctx, offset, true));
@@ -832,23 +850,23 @@ pub const Enemy = struct {
                 else
                     25;
                 const min_speed: f32 = 75;
-                const speed = @max(min_speed, body.velocity.length() + added_speed);
+                const speed = @max(min_speed, body.velocity().length() + added_speed);
                 var angle: f32 = 0;
                 if (ctx.ctx.get(State).is_aiming_for_player) {
                     const player = ctx.ctx.game.player();
                     const player_body = player.get(Game.C.Body);
-                    const rel = player_body.position.subtract(owner_body.position);
+                    const rel = player_body.position().subtract(owner_body.position());
                     angle = std.math.atan2(rel.y, rel.x);
                 } else {
-                    angle = body.rotation + -std.math.pi / 2.0;
+                    angle = body.rotation() + -std.math.pi / 2.0;
                 }
                 var velocity = Game.Vector.init(speed, 0).rotate(angle);
 
                 if (!ctx.ctx.get(State).is_aiming_for_player) {
-                    velocity = velocity.add(owner_body.velocity);
+                    velocity = velocity.add(owner_body.velocity());
                 }
 
-                body.velocity = velocity;
+                body.setVelocity(velocity);
             }
 
             pub fn update(ctx: Game.C.StateMachineContext) void {
@@ -871,9 +889,9 @@ pub const Enemy = struct {
                 const body = ctx.ctx.get(Game.C.Body);
                 const player = ctx.ctx.game.player();
                 const player_body = player.get(Game.C.Body);
-                const rel = player_body.position.subtract(body.position);
+                const rel = player_body.position().subtract(body.position());
                 const target_angle = std.math.atan2(rel.y, rel.x);
-                const current_angle = std.math.atan2(body.velocity.y, body.velocity.x);
+                const current_angle = std.math.atan2(body.velocity().y, body.velocity().x);
                 const turn_rate: f32 = std.math.pi * 2.0;
                 const angle_diff = clampAngleDiff(
                     current_angle,
@@ -881,7 +899,7 @@ pub const Enemy = struct {
                     turn_rate * ctx.deltaTime(),
                 );
 
-                body.velocity = body.velocity.rotate(angle_diff);
+                body.setVelocity(body.velocity().rotate(angle_diff));
             }
         };
 
@@ -918,51 +936,10 @@ pub const Enemy = struct {
     fn onSpawnProjectile(_: Game.EntityContext, ctx: Game.EntityContext) void {
         ctx.add(Game.C.DamageOnTouch{});
         const body = ctx.get(Game.C.Body);
-        body.velocity.y *= -1;
+        body.setVelocityY(body.velocity().y * -1);
         // const enemy_body = enemy_ctx.get(Game.C.Body);
         // body.velocity = body.velocity.add(enemy_body.velocity);
-        body.rotation = std.math.pi;
-    }
-
-    fn shootWeapon(game: *Game, ctx: Game.EntityContext, weapon: *Game.C.EnemyWeapon) void {
-        weapon.next_shot_at = game.elapsedTime() + weapon.cooldown();
-
-        const enemy = ctx.getConst(Game.C.Enemy);
-        const offset = weapon.offset();
-        const body = ctx.getConst(Game.C.Body);
-        const position = offset.add(body.position);
-        var velocity = body.velocity;
-        velocity.x = 0;
-        velocity.y = 50 + body.velocity.y;
-        const enemy_def = EnemyDef.init(enemy.tier, weapon.weapon_type);
-
-        switch (weapon.weapon_type) {
-            .single_cannon => spawnProjectile(game, enemy_def, position, velocity),
-            .double_cannon => {
-                var p = position;
-                const space_between = 20;
-                p.x -= space_between / 2;
-                spawnProjectile(game, enemy_def, p, velocity);
-                p.x += space_between;
-                spawnProjectile(game, enemy_def, p, velocity);
-            },
-        }
-    }
-
-    fn spawnProjectile(
-        game: *Game,
-        enemy_def: EnemyDef,
-        position: Game.Vector,
-        velocity: Game.Vector,
-    ) void {
-        const proj_ctx = game.createEntity();
-        proj_ctx.add(Game.C.Body.init(position));
-        const proj_body = proj_ctx.get(Game.C.Body);
-        proj_body.velocity = velocity;
-        proj_ctx.add(game.initSprite(.init(36, 39, 5, 11)));
-        const sprite = proj_ctx.get(Game.C.Renderable);
-        sprite.sprite.tint = enemy_def.tint();
-        proj_ctx.add(Game.C.DamageOnTouch{});
+        body.setRotation(std.math.pi);
     }
 
     fn updateRemoveOutOfBounds(_: *Enemy, game: *Game) void {

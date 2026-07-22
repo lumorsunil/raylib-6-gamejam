@@ -21,7 +21,7 @@ pub const Game = struct {
     allocator: std.mem.Allocator,
     reg: ecs.Registry,
     random_io: std.Random.IoSource,
-    screen_state: ScreenState = if (mode == .prod) .menu else .menu,
+    screen_state: ScreenState = if (mode == .prod) .menu else .debug,
     logo: Logo = .init(0),
     menu: Menu = .init(),
     settings: Settings = .init(),
@@ -36,6 +36,7 @@ pub const Game = struct {
     physics_frames: usize = 0,
     rem_time: f32 = 0,
     is_paused: bool = false,
+    draw_layer_lists: [4]std.ArrayList(ecs.Entity) = undefined,
 
     pub const max_physics_frames = 1;
 
@@ -47,7 +48,10 @@ pub const Game = struct {
         modification,
         ending,
         game_over,
+        debug,
     };
+
+    pub const ztracy = @import("ztracy");
 
     pub const Logo = @import("logo.zig").Logo;
     pub const Menu = @import("menu.zig").Menu;
@@ -75,11 +79,42 @@ pub const Game = struct {
     }
 
     pub fn deinit(self: *@This()) void {
+        const player_ctx = self.player();
+        const player_component = player_ctx.get(Game.C.Player);
+        player_component.deinit(self.allocator);
         self.physics().deinit(self.allocator);
         self.shop_state.deinit(self.allocator);
+        const animations = self.getSingleton(Animations);
+        inline for (std.meta.fields(Animations)) |field| {
+            self.allocator.free(@field(animations, field.name).frames);
+        }
         self.reg.deinit();
         rl.closeAudioDevice();
         rl.closeWindow();
+    }
+
+    pub const ZoneCtx = struct {
+        ctx: ztracy.ZoneCtx,
+
+        pub fn init(ctx: ztracy.ZoneCtx) @This() {
+            return .{ .ctx = ctx };
+        }
+
+        pub fn end(self: @This()) void {
+            self.ctx.End();
+        }
+    };
+
+    pub fn tracyZoneN(comptime src: std.builtin.SourceLocation, label: [*:0]const u8) ZoneCtx {
+        return .init(ztracy.ZoneN(src, label));
+    }
+
+    pub fn tracyZoneNC(
+        comptime src: std.builtin.SourceLocation,
+        label: [*:0]const u8,
+        color: Color,
+    ) ZoneCtx {
+        return .init(ztracy.ZoneNC(src, label, @bitCast(color.toInt())));
     }
 
     var emscripten_game_ptr: *Game = undefined;
@@ -304,6 +339,9 @@ pub const Game = struct {
         }
 
         pub fn add(self: EntityContext, component: anytype) void {
+            if (@TypeOf(component) == Game.C.Renderable) {
+                return self.addRenderable(component);
+            }
             return self.game.reg.addOrReplace(self.entity, component);
         }
 
@@ -317,6 +355,17 @@ pub const Game = struct {
 
         pub fn valid(self: EntityContext) bool {
             return self.game.reg.valid(self.entity);
+        }
+
+        pub fn addBody(self: @This(), position: Vector) *Game.C.Body {
+            const body = Game.C.Body.init(self, position);
+            self.add(body);
+            return self.get(Game.C.Body);
+        }
+
+        pub fn addRenderable(self: @This(), renderable: Game.C.Renderable) void {
+            self.game.reg.addOrReplace(self.entity, renderable);
+            self.game.draw_layer_lists[renderable.layer()].append(self.game.allocator, self.entity) catch unreachable;
         }
     };
 
@@ -370,15 +419,15 @@ pub const Game = struct {
         const body = ctx.get(Game.C.Body);
         var hitbox_component = ctx.tryGetConst(Game.C.Hitbox) orelse {
             const renderable = ctx.get(Game.C.Renderable);
-            const size = renderable.size(1, body.rotation);
-            const origin = renderable.origin(1, body.rotation);
-            const position = body.position.subtract(origin);
+            const size = renderable.size(1, body.rotation());
+            const origin = renderable.origin(1, body.rotation());
+            const position = body.position().subtract(origin);
 
             return .init(position, size);
         };
 
         const origin = hitbox_component.size().scale(0.5);
-        const position = body.position.subtract(origin).add(hitbox_component.position());
+        const position = body.position().subtract(origin).add(hitbox_component.position());
         hitbox_component.setPosition(position);
 
         return hitbox_component;
@@ -460,8 +509,9 @@ pub const Game = struct {
     }
 
     pub fn startGame(self: *Game) void {
-        self.screen_state = .gameplay;
-        self.nextStage();
+        self.modification();
+        // self.screen_state = .gameplay;
+        // self.nextStage();
     }
 
     pub fn unpause(self: *Game) void {
@@ -494,6 +544,9 @@ pub const Game = struct {
     }
 
     pub fn updateMusic(self: *Game) void {
+        const zone = Game.tracyZoneN(@src(), @typeName(@This()) ++ "." ++ @src().fn_name);
+        defer zone.end();
+
         const music = self.current_music orelse return;
         rl.updateMusicStream(music);
     }
@@ -551,6 +604,9 @@ pub const Game = struct {
     }
 
     pub fn updateTime(self: *@This()) void {
+        const zone = Game.tracyZoneN(@src(), @typeName(@This()) ++ "." ++ @src().fn_name);
+        defer zone.end();
+
         if (self.is_paused) return;
         const time_step = self.physicsTimeStep();
         var dt = self.deltaRealTime();

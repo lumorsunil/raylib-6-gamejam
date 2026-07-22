@@ -494,8 +494,8 @@ pub const Item = struct {
                 onSpawnProjectile,
             );
             const left_body = left.get(Game.C.Body);
-            left_body.rotation += std.math.pi / 4.0;
-            left_body.velocity = left_body.velocity.rotate(std.math.pi / 4.0);
+            left_body.setRotation(left_body.rotation() + std.math.pi / 4.0);
+            left_body.setVelocity(left_body.velocity().rotate(std.math.pi / 4.0));
             _ = spawnProjectile(
                 game,
                 position.add(offset),
@@ -513,8 +513,8 @@ pub const Item = struct {
                 onSpawnProjectile,
             );
             const right_body = right.get(Game.C.Body);
-            right_body.rotation -= std.math.pi / 4.0;
-            right_body.velocity = right_body.velocity.rotate(std.math.pi / -4.0);
+            right_body.setRotation(right_body.rotation() - std.math.pi / 4.0);
+            right_body.setVelocity(right_body.velocity().rotate(std.math.pi / -4.0));
         }
 
         fn scattershotShootTwo(
@@ -861,9 +861,8 @@ fn spawnProjectile(
     onSpawnProjectile: *const fn (@TypeOf(context), Game.EntityContext) void,
 ) Game.EntityContext {
     const ctx = game.createEntity();
-    ctx.add(Game.C.Body.init(position));
-    const body = ctx.get(Game.C.Body);
-    body.velocity = velocity;
+    const body = ctx.addBody(position);
+    body.setVelocity(velocity);
     ctx.add(sprite);
     onSpawnProjectile(context, ctx);
     // ctx.add(Game.C.PlayerProjectile.init(1));

@@ -45,7 +45,7 @@ pub const RelativePosition = struct {
 
         const body = ctx.get(Game.C.Body);
         const anchoree_body = relative_position.anchoree.getConst(Game.C.Body);
-        const offset = relative_position.offset.rotate(anchoree_body.rotation);
-        body.position = anchoree_body.position.add(offset);
+        const offset = relative_position.offset.rotate(anchoree_body.rotation());
+        body.setPosition(anchoree_body.position().add(offset));
     }
 };

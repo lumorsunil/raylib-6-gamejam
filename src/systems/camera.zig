@@ -20,10 +20,10 @@ pub const Camera = struct {
             const body = ctx.getConst(Game.C.Body);
 
             if (self.follow_x) {
-                camera.target.x = body.position.x - pixel_size.x / 2;
+                camera.target.x = body.position().x - pixel_size.x / 2;
             }
             if (self.follow_y) {
-                camera.target.y = body.position.y - pixel_size.y / 2;
+                camera.target.y = body.position().y - pixel_size.y / 2;
             }
         }
     }

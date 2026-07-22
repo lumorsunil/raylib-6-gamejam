@@ -9,6 +9,8 @@ const Musics = @import("music.zig").Musics;
 const Animations = @import("animation.zig").Animations;
 
 pub fn setup(self: *Game) void {
+    for (&self.draw_layer_lists) |*list| list.* = .empty;
+
     initRaylib(self);
     initLogo(self) catch unreachable;
     initMenu(self);
@@ -21,7 +23,7 @@ pub fn setup(self: *Game) void {
 
     createSystems(self);
     setupSystems(self);
-    // createDefaultGrid(self) catch unreachable;
+    createDefaultGrid(self) catch unreachable;
 
     setupEntities(self) catch unreachable;
 
@@ -30,6 +32,14 @@ pub fn setup(self: *Game) void {
 
 pub fn setupEntities(self: *Game) !void {
     try createPlayer(self);
+
+    if (self.screen_state == .debug) {
+        createEntitiesDebug(self);
+    }
+}
+
+fn createEntitiesDebug(self: *Game) void {
+    createDebugShards(self);
 }
 
 fn initRaylib(self: *Game) void {
@@ -142,10 +152,12 @@ fn createSystems(self: *Game) void {
     self.addSingleton(Game.S.DamageOnTouch.init());
     self.addSingleton(Game.S.DestroyEntities.init());
     self.addSingleton(Game.S.Enemy.init());
+    self.addSingleton(Game.S.FadeGradient.init());
     self.addSingleton(Game.S.Input.init());
-    self.addSingleton(Game.S.Physics.init());
+    self.addSingleton(Game.S.Physics.init(self.allocator));
     self.addSingleton(Game.S.Player.init());
     self.addSingleton(Game.S.RelativePosition.init());
+    self.addSingleton(Game.S.ScaleGradient.init());
     self.addSingleton(Game.S.Shield.init());
     self.addSingleton(Game.S.StateMachine.init());
 }
@@ -172,11 +184,12 @@ fn createPlayer(self: *Game) !void {
     // player_component.inventory.items[0].?.owner = player;
     // player_component.inventory.items[1] = .body_mod_shield;
     // player_component.inventory.items[1].?.owner = player;
-    var renderable = player_component.body.body_type.sprite(self);
-    renderable.sprite.draw_layer = Game.draw_layers.player;
+    var sprite = player_component.body.body_type.sprite(self).sprite;
+    sprite.draw_layer = Game.draw_layers.player;
+    const renderable = Game.C.Renderable{ .player = .{ .sprite = sprite } };
     player.add(renderable);
-    const player_size = renderable.size(1, 0);
-    player.add(Game.C.Body.init(position.subtract(player_size)));
+    const player_size = sprite.size(0);
+    _ = player.addBody(position.subtract(player_size));
     player.add(Game.C.Controllable.init());
 
     // const weapon_ctx = self.createEntity();
@@ -192,26 +205,15 @@ fn createPlayer(self: *Game) !void {
 }
 
 fn createDefaultGrid(self: *Game) !void {
-    const grid = try Game.S.Physics.DefaultGrid.init(self.allocator, 10, 8);
-
-    for (0..grid.width) |x| {
-        for (0..grid.height) |y| {
-            const cell = &grid.data[x + y * grid.width];
-
-            if (y == grid.height - 2 and x > 0 and x < grid.width - 1) {
-                cell.is_solid = true;
-            } else {
-                cell.is_solid = false;
-            }
-        }
-    }
-
+    const grid = try Game.S.Physics.DefaultGrid.init(self.allocator, 7, 8);
     self.physics().grid = grid;
 }
 
 fn createDebugShards(self: *Game) void {
-    const n_columns = 100;
-    const n_rows = 100;
+    // const n_columns = 100;
+    // const n_rows = 100;
+    const n_columns = 10;
+    const n_rows = 10;
     const size = Game.Vector.init(@floatFromInt(n_columns), @floatFromInt(n_rows));
 
     for (0..n_columns) |x| {
@@ -219,7 +221,7 @@ fn createDebugShards(self: *Game) void {
             const ctx = self.createEntity();
             const position_rel = Game.Vector.init(@floatFromInt(x), @floatFromInt(y)).divide(size);
             const position = self.getAbsolutePos(position_rel);
-            ctx.add(Game.C.Body.init(position));
+            _ = ctx.addBody(position);
             const shard = Game.C.Shard.init(.small);
             ctx.add(shard);
             ctx.add(shard.renderable(self));

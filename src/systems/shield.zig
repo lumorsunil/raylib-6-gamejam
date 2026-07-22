@@ -9,6 +9,9 @@ pub const Shield = struct {
     }
 
     pub fn update(_: *Shield, game: *Game) void {
+        const zone = Game.tracyZoneN(@src(), @typeName(@This()) ++ "." ++ @src().fn_name);
+        defer zone.end();
+
         const player = game.player();
         const player_component = player.get(Game.C.Player);
         var player_shield_it = player_component.shieldIterator();

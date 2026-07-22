@@ -4,6 +4,15 @@ const rlz = @import("raylib_zig");
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const enable_ztracy = b.option(bool, "enable_ztracy", "Enable profiling with tracy.");
+
+    const ztracy_dep = b.dependency("ztracy", .{
+        .target = target,
+        .optimize = optimize,
+        .enable_ztracy = enable_ztracy,
+    });
+    const ztracy = ztracy_dep.module("root");
+    const ztracy_artifact = ztracy_dep.artifact("tracy");
 
     const raylib_dep = b.dependency("raylib_zig", .{
         .target = target,
@@ -22,6 +31,7 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
         .imports = &.{
+            .{ .name = "ztracy", .module = ztracy },
             .{ .name = "raylib", .module = raylib },
             .{ .name = "ecs", .module = ecs },
         },
@@ -60,6 +70,8 @@ pub fn build(b: *std.Build) !void {
         emrun_step.dependOn(emcc_step);
         run_step.dependOn(emrun_step);
     } else {
+        exe_mod.linkLibrary(ztracy_artifact);
+
         const exe = b.addExecutable(.{
             .name = "zig_raylib_ecs_template",
             .root_module = exe_mod,

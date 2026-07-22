@@ -45,6 +45,9 @@ pub const Input = struct {
     }
 
     pub fn update(self: *Input) void {
+        const zone = Game.tracyZoneN(@src(), @typeName(@This()) ++ "." ++ @src().fn_name);
+        defer zone.end();
+
         self.left_x_axis = rl.getGamepadAxisMovement(0, .left_x);
         applyDeadzone(&self.left_x_axis, self.left_stick_deadzone);
         self.left_y_axis = rl.getGamepadAxisMovement(0, .left_y);
