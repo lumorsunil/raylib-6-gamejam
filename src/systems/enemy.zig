@@ -588,9 +588,21 @@ pub const Enemy = struct {
         projectile: Game.EntityContext,
         t: f64,
     ) void {
-        projectile.destroy();
+        const player_projectile = projectile.get(Game.C.PlayerProjectile);
+        for (player_projectile.entities_hit.items) |entity_hit| {
+            if (enemy.equals(.init(game, entity_hit))) {
+                return;
+            }
+        }
+
+        player_projectile.entities_hit.append(game.allocator, enemy.entity) catch unreachable;
+
+        if (player_projectile.piercing_charges == 0) {
+            projectile.destroy();
+        } else {
+            player_projectile.piercing_charges -= 1;
+        }
         const enemy_component = enemy.get(Game.C.Enemy);
-        const player_projectile = projectile.getConst(Game.C.PlayerProjectile);
         enemy_component.health -= player_projectile.damage;
         game.playSound(.enemy_hit);
         if (enemy_component.health <= 0) {

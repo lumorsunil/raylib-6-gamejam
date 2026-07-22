@@ -176,7 +176,8 @@ fn createPlayer(self: *Game) !void {
     // renderable.sprite.draw_layer = Game.draw_layers.player;
     player.add(try Game.C.Player.init(self));
     const player_component = player.get(Game.C.Player);
-    player_component.body.slots[0] = .weapon_machine_gun;
+    const starting_item = Game.C.Item.weapon_machine_gun;
+    player_component.body.slots[0] = starting_item;
     player_component.body.slots[0].?.owner = player;
     // player_component.body.slots[1] = .weapon_machine_gun;
     // player_component.body.slots[1].?.owner = player;

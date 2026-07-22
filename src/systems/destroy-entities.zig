@@ -50,6 +50,9 @@ pub const DestroyEntities = struct {
         if (ctx.tryGet(Game.C.Player)) |player| {
             player.deinit(game.allocator);
         }
+        if (ctx.tryGet(Game.C.PlayerProjectile)) |player_projectile| {
+            player_projectile.deinit(game.allocator);
+        }
     }
 
     pub fn destroy(self: *DestroyEntities, entity: ecs.Entity) void {

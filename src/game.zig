@@ -14,14 +14,14 @@ const Ending = @import("ending.zig").Ending;
 
 const Mode = enum { dev, prod };
 
-const mode: Mode = .dev;
+const mode: Mode = .prod;
 
 pub const Game = struct {
     io: std.Io,
     allocator: std.mem.Allocator,
     reg: ecs.Registry,
     random_io: std.Random.IoSource,
-    screen_state: ScreenState = if (mode == .prod) .menu else .menu,
+    screen_state: ScreenState = if (mode == .prod) .menu else .debug,
     logo: Logo = .init(0),
     menu: Menu = .init(),
     settings: Settings = .init(),
@@ -281,7 +281,9 @@ pub const Game = struct {
     }
 
     pub fn createEntity(self: *@This()) EntityContext {
-        return .init(self, self.reg.create());
+        const entity = EntityContext.init(self, self.reg.create());
+        entity.add(Game.C.Metadata.init(self.elapsedTime()));
+        return entity;
     }
 
     pub fn destroyEntity(self: *@This(), entity: ecs.Entity) void {
@@ -366,6 +368,11 @@ pub const Game = struct {
         pub fn addRenderable(self: @This(), renderable: Game.C.Renderable) void {
             self.game.reg.addOrReplace(self.entity, renderable);
             self.game.draw_layer_lists[renderable.layer()].append(self.game.allocator, self.entity) catch unreachable;
+        }
+
+        pub fn timeAlive(self: @This()) f32 {
+            const metadata = self.get(Game.C.Metadata);
+            return @floatCast(self.game.elapsedTime() - metadata.created_at);
         }
     };
 

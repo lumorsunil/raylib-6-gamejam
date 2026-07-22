@@ -9,6 +9,7 @@ pub const Renderable = union(enum) {
     player: Player,
     enemy: Enemy,
     shard: Shard,
+    railgun: Railgun,
 
     pub fn draw(
         self: Renderable,
@@ -308,6 +309,47 @@ pub const Renderable = union(enum) {
         }
 
         pub fn layer(self: Shard) usize {
+            return self.sprite.layer();
+        }
+    };
+
+    pub const Railgun = struct {
+        sprite: Sprite,
+        tier: usize,
+
+        pub fn draw(
+            self: Railgun,
+            maybe_ctx: ?Game.EntityContext,
+            position: Game.Vector,
+            scale: f32,
+            rotation: f32,
+        ) void {
+            const zone = Game.tracyZoneN(@src(), @typeName(@This()) ++ "." ++ @src().fn_name);
+            defer zone.end();
+
+            const ctx = maybe_ctx orelse return;
+
+            const max_len = 100;
+
+            self.sprite.draw(maybe_ctx, position, scale, rotation);
+            const body = ctx.get(Game.C.Body);
+            const end_pos = body.position();
+            const velocity = body.velocity();
+            const dt = ctx.timeAlive();
+            var rel = velocity.negate().scale(dt);
+            const rel_len = @min(rel.length(), max_len);
+            rel = rel.normalize().scale(rel_len);
+            const start_pos = rel.add(end_pos);
+            const offset = velocity.normalize().rotate(std.math.pi / 2.0).scale(2);
+
+            rl.drawTriangle(end_pos.add(offset), end_pos.subtract(offset), start_pos, self.sprite.tint);
+        }
+
+        pub fn size(self: Railgun, rotation: f32) Game.Vector {
+            return self.sprite.size(rotation);
+        }
+
+        pub fn layer(self: Railgun) usize {
             return self.sprite.layer();
         }
     };

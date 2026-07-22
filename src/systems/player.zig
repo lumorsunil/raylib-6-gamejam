@@ -87,12 +87,23 @@ pub const Player = struct {
             const offset = player_component.body.gameplayOffset(game, slot_index);
             const position = body.position().add(offset);
             const damage = weapon.item_type.weapon.damage();
-            weapon.item_type.weapon.shoot(game, weapon, position, damage, onSpawnProjectile);
+            const piercing = weapon.item_type.weapon.piercing();
+            const player_projectile = Game.C.PlayerProjectile.init(damage, piercing);
+            weapon.item_type.weapon.shoot(
+                game,
+                weapon,
+                position,
+                player_projectile,
+                onSpawnProjectile,
+            );
         }
     }
 
-    fn onSpawnProjectile(damage: f32, ctx: Game.EntityContext) void {
-        ctx.add(Game.C.PlayerProjectile.init(damage));
+    fn onSpawnProjectile(
+        player_projectile: Game.C.PlayerProjectile,
+        ctx: Game.EntityContext,
+    ) void {
+        ctx.add(player_projectile);
     }
 
     // fn updateWeapon(
