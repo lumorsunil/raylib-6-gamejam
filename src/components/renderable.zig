@@ -192,21 +192,28 @@ pub const Renderable = union(enum) {
             var shield_it = player_component.shieldIterator();
 
             var has_shield_item = false;
+            var shield: *Game.C.Item.BodyModShield = undefined;
+            var n_charges: usize = 0;
             while (shield_it.next()) |entry| {
                 has_shield_item = true;
-                if (entry.shield.n_charges > 0) {
-                    if (player_component.shield_animation.isDone()) {
-                        entry.shield.shieldSprite(ctx.game).draw(null, position, 1, 0);
-                    } else {
-                        player_component.shield_animation.currentFrame().draw(null, position, 1, 0);
-                    }
-                    return;
-                }
+                n_charges += entry.shield.n_charges;
+                shield = entry.shield;
             }
 
-            if (has_shield_item and !player_component.shield_animation.isDone()) {
-                player_component.shield_animation.currentFrame().draw(null, position, 1, 0);
+            if (!has_shield_item) return;
+
+            var sprite: Game.C.Renderable = undefined;
+
+            if (!player_component.shield_animation.isDone()) {
+                sprite = player_component.shield_animation.currentFrame();
+            } else if (n_charges > 0) {
+                sprite = shield.shieldSprite(ctx.game);
+            } else {
+                return;
             }
+
+            sprite.sprite.tint = Game.C.Item.BodyModShield.tint(n_charges);
+            sprite.draw(null, position, 1, 0);
         }
 
         pub fn size(self: Player, rotation: f32) Game.Vector {

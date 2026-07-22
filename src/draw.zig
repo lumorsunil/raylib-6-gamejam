@@ -553,7 +553,7 @@ fn merge(self: *Game, a: *?Game.C.Item, b: *?Game.C.Item) void {
 
     self.playSound(.menu_item_merge);
 
-    switch (a_.merge(b_)) {
+    switch (a_.merge(self.allocator, b_)) {
         .destroy => |item| {
             const player = self.player();
             const player_component = player.get(Game.C.Player);

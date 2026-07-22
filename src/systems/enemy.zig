@@ -590,7 +590,8 @@ pub const Enemy = struct {
     ) void {
         projectile.destroy();
         const enemy_component = enemy.get(Game.C.Enemy);
-        enemy_component.health -= 1;
+        const player_projectile = projectile.getConst(Game.C.PlayerProjectile);
+        enemy_component.health -= player_projectile.damage;
         game.playSound(.enemy_hit);
         if (enemy_component.health <= 0) {
             const enemy_body = enemy.getConst(Game.C.Body);
@@ -795,10 +796,11 @@ pub const Enemy = struct {
             game.newAnimation(.enemy_bullet_spawn, false);
         bullet_ctx.add(animation);
         bullet_ctx.add(animation.currentFrame());
-        const enemy_body = ctx.get(Game.C.Body);
+        var enemy_body = ctx.get(Game.C.Body);
         const offset_distance = 8;
         const offset = Game.Vector.init(0, -offset_distance);
         const body = bullet_ctx.addBody(enemy_body.position().add(offset));
+        enemy_body = ctx.get(Game.C.Body);
         body.setRotation(enemy_body.rotation());
         bullet_ctx.add(Game.C.DamageOnTouch.init());
         bullet_ctx.add(Game.C.Owner.init(ctx));

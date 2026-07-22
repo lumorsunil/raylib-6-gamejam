@@ -1,7 +1,7 @@
 pub const PlayerProjectile = struct {
-    damage: usize,
+    damage: f32,
 
-    pub fn init(damage: usize) @This() {
+    pub fn init(damage: f32) @This() {
         return .{ .damage = damage };
     }
 };

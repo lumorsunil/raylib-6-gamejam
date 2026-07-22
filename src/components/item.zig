@@ -1,4 +1,5 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const Game = @import("../game.zig").Game;
 
 pub const Item = struct {
@@ -93,22 +94,25 @@ pub const Item = struct {
         destroy: *Item,
     };
 
-    pub fn merge(self: *@This(), other: *@This()) MergeEvent {
+    pub fn merge(self: *@This(), allocator: Allocator, other: *@This()) MergeEvent {
         return switch (self.item_type) {
             .weapon => |*s| {
                 if (other.item_type == .weapon_mod) {
-                    other.item_type.weapon_mod.apply(s);
+                    s.weapon_mods.append(allocator, other.*) catch unreachable;
                     return .{ .destroy = other };
                 }
                 self.tier += 1;
+                s.weapon_type.setTier(self.tier);
+                s.weapon_mods.appendSlice(allocator, other.item_type.weapon.weapon_mods.items) catch unreachable;
                 return .{ .destroy = other };
             },
-            .weapon_mod => |s| {
-                s.apply(&other.item_type.weapon);
+            .weapon_mod => {
+                other.item_type.weapon.weapon_mods.append(allocator, self.*) catch unreachable;
                 return .{ .destroy = self };
             },
-            .body_mod => {
+            .body_mod => |*s| {
                 self.tier += 1;
+                s.body_mod_type.setTier(self.tier);
                 return .{ .destroy = other };
             },
         };
@@ -162,6 +166,11 @@ pub const Item = struct {
 
         pub fn init(weapon_type: WeaponType) @This() {
             return .{ .weapon_type = weapon_type };
+        }
+
+        pub fn damage(self: @This()) f32 {
+            const modded_weapon = self.applyMods();
+            return modded_weapon.weapon_type.damage();
         }
 
         pub fn cost(self: @This()) usize {
@@ -219,7 +228,8 @@ pub const Item = struct {
             self: @This(),
             writer: *std.Io.Writer,
         ) std.Io.Writer.Error!void {
-            return writer.print("{f}", .{self.weapon_type});
+            const modded_weapon = self.applyMods();
+            return writer.print("{f}", .{modded_weapon.weapon_type});
         }
     };
 
@@ -235,6 +245,18 @@ pub const Item = struct {
 
         pub fn initScatterShot(tier: usize) @This() {
             return .{ .scatter_shot = .init(tier) };
+        }
+
+        pub fn setTier(self: *@This(), tier: usize) void {
+            switch (self.*) {
+                inline else => |*s| s.* = .init(tier),
+            }
+        }
+
+        pub fn damage(self: @This()) f32 {
+            return switch (self) {
+                inline else => |s| s.damage(),
+            };
         }
 
         pub fn cost(self: @This()) usize {
@@ -773,6 +795,12 @@ pub const Item = struct {
             return .{ .shield = .init(tier) };
         }
 
+        pub fn setTier(self: *@This(), tier: usize) void {
+            switch (self.*) {
+                inline else => |*s| s.* = .init(tier),
+            }
+        }
+
         pub fn cost(self: @This()) usize {
             return switch (self) {
                 inline else => |s| s.cost(),
@@ -840,6 +868,15 @@ pub const Item = struct {
             return game.initSprite(.init(10, 210, 47, 46));
         }
 
+        pub fn tint(n_charges: usize) Game.Color {
+            return switch (n_charges) {
+                0 => .sky_blue,
+                1 => .sky_blue,
+                2 => .init(60, 255, 100, 255),
+                else => .init(255, 60, 100, 255),
+            };
+        }
+
         pub fn format(
             self: @This(),
             writer: *std.Io.Writer,
@@ -865,7 +902,6 @@ fn spawnProjectile(
     body.setVelocity(velocity);
     ctx.add(sprite);
     onSpawnProjectile(context, ctx);
-    // ctx.add(Game.C.PlayerProjectile.init(1));
 
     return ctx;
 }

@@ -39,17 +39,24 @@ pub const Player = struct {
 
         var shield_it = self.shieldIterator();
 
+        var shield: *Game.C.Item.BodyModShield = undefined;
+        var n_charges: usize = 0;
         while (shield_it.next()) |entry| {
+            n_charges += entry.shield.n_charges;
             if (entry.shield.n_charges > 0) {
-                entry.shield.n_charges -= 1;
-                entry.shield.regenerate_charge_at = game.elapsedTime() + entry.shield.regenerate_charge_duration;
-                self.invincibility_ends_at = game.elapsedTime() + grace_period_duration;
-                game.playSound(.shield_hit);
-                if (entry.shield.n_charges == 0) {
-                    game.player().get(Game.C.Player).shield_animation = game.newAnimation(.shield_dissipate, false);
-                }
-                return;
+                shield = entry.shield;
             }
+        }
+
+        if (n_charges > 0) {
+            shield.n_charges -= 1;
+            shield.regenerate_charge_at = game.elapsedTime() + shield.regenerate_charge_duration;
+            self.invincibility_ends_at = game.elapsedTime() + grace_period_duration;
+            game.playSound(.shield_hit);
+            // if (n_charges == 0) {
+            game.player().get(Game.C.Player).shield_animation = game.newAnimation(.shield_dissipate, false);
+            // }
+            return;
         }
 
         game.playSound(.player_explosion);

@@ -86,13 +86,13 @@ pub const Player = struct {
             const body = player.getConst(Game.C.Body);
             const offset = player_component.body.gameplayOffset(game, slot_index);
             const position = body.position().add(offset);
-            weapon.item_type.weapon.shoot(game, weapon, position, player, onSpawnProjectile);
+            const damage = weapon.item_type.weapon.damage();
+            weapon.item_type.weapon.shoot(game, weapon, position, damage, onSpawnProjectile);
         }
     }
 
-    fn onSpawnProjectile(_: Game.EntityContext, ctx: Game.EntityContext) void {
-        // TODO: change damage to be based on the item
-        ctx.add(Game.C.PlayerProjectile.init(1));
+    fn onSpawnProjectile(damage: f32, ctx: Game.EntityContext) void {
+        ctx.add(Game.C.PlayerProjectile.init(damage));
     }
 
     // fn updateWeapon(

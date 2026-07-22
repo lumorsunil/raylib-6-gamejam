@@ -14,14 +14,14 @@ const Ending = @import("ending.zig").Ending;
 
 const Mode = enum { dev, prod };
 
-const mode: Mode = .prod;
+const mode: Mode = .dev;
 
 pub const Game = struct {
     io: std.Io,
     allocator: std.mem.Allocator,
     reg: ecs.Registry,
     random_io: std.Random.IoSource,
-    screen_state: ScreenState = if (mode == .prod) .menu else .debug,
+    screen_state: ScreenState = if (mode == .prod) .menu else .menu,
     logo: Logo = .init(0),
     menu: Menu = .init(),
     settings: Settings = .init(),
